@@ -12,7 +12,7 @@ creator: null
 creator_auth0_id: null
 shared_with_emails: []
 shared_emails: []
-invocation_count: 2746
+invocation_count: 2756
 output_schemas: { "synthesis": "table" }
 created_at: "2026-02-19T08:39:12.362934Z"
 updated_at: "2026-02-19T08:39:12.362979Z"
