@@ -8,6 +8,7 @@ import { z } from "zod";
 import { extractFigures, saveArticleArtifacts } from "./citations.js";
 import { ensureConfigDirs, resolveConfig } from "./config.js";
 import { extractAnswerText, OpenEvidenceClient, resolveVisualTags } from "./openevidence-client.js";
+import { parseStdoutJson, runCollectionSort, withTempPlan } from "./python-bridge.js";
 import type { OpenEvidenceAskRequest } from "./types.js";
 
 const config = resolveConfig();
@@ -149,6 +150,194 @@ server.registerTool(
         artifacts: formatArtifactsForResponse(artifacts, args.include_bibtex ?? true),
       });
     }),
+);
+
+server.registerTool(
+  "oe_collections_list",
+  {
+    title: "OpenEvidence Collections List",
+    description: "List all collections owned by the authenticated user.",
+  },
+  async () =>
+    withClient(async (client) => {
+      const data = await client.listCollections();
+      return ok({ collections: data, count: data.length });
+    }),
+);
+
+server.registerTool(
+  "oe_collections_get",
+  {
+    title: "OpenEvidence Collection Get",
+    description:
+      "Fetch a collection (incl. nested questions[] = membership list) by id.",
+    inputSchema: z.object({
+      collection_id: z.string().uuid(),
+    }),
+  },
+  async (args) =>
+    withClient(async (client) => {
+      const data = await client.getCollection(args.collection_id);
+      return ok(data);
+    }),
+);
+
+server.registerTool(
+  "oe_collections_create",
+  {
+    title: "OpenEvidence Collection Create",
+    description:
+      "Create a new collection. By convention, agent-managed names start with '#'.",
+    inputSchema: z.object({
+      name: z.string().min(1).max(120),
+      description: z.string().max(500).optional(),
+    }),
+  },
+  async (args) =>
+    withClient(async (client) => {
+      const data = await client.createCollection(args.name, args.description);
+      return ok(data);
+    }),
+);
+
+server.registerTool(
+  "oe_collections_add_article",
+  {
+    title: "OpenEvidence Collection Add Article",
+    description: "Add a chat (article) to a collection. Idempotent in practice.",
+    inputSchema: z.object({
+      collection_id: z.string().uuid(),
+      article_id: z.string().uuid(),
+    }),
+  },
+  async (args) =>
+    withClient(async (client) => {
+      const data = await client.addArticleToCollection(
+        args.collection_id,
+        args.article_id,
+      );
+      return ok(data);
+    }),
+);
+
+server.registerTool(
+  "oe_collections_db_init",
+  {
+    title: "Init Collections SQLite Mirror",
+    description:
+      "Create the local SQLite mirror at $OE_MCP_DB_PATH (default ~/.openevidence-mcp/db/oe.sqlite). Idempotent.",
+  },
+  async () => {
+    const r = await runCollectionSort(config, ["init"]);
+    if (r.code !== 0) return fail(`init failed: ${r.stderr || r.stdout}`);
+    return ok({ message: r.stdout.trim() });
+  },
+);
+
+server.registerTool(
+  "oe_collections_sync_history",
+  {
+    title: "Sync Chat History to SQLite",
+    description:
+      "Paginate /api/article/list and upsert chats. Incremental by default (stops on the first all-known page).",
+    inputSchema: z.object({
+      full: z.boolean().default(false).optional(),
+      pages: z.number().int().min(1).max(200).optional(),
+      page_size: z.number().int().min(1).max(50).default(20).optional(),
+      rate_seconds: z.number().min(0.1).max(10).default(1.0).optional(),
+    }),
+  },
+  async (args) => {
+    const cliArgs: string[] = ["sync-history"];
+    if (args.full) cliArgs.push("--full");
+    if (args.pages !== undefined) cliArgs.push("--pages", String(args.pages));
+    if (args.page_size !== undefined) cliArgs.push("--page-size", String(args.page_size));
+    const r = await runCollectionSort(config, cliArgs, { rateSeconds: args.rate_seconds });
+    if (r.code !== 0) return fail(`sync-history failed: ${r.stderr || r.stdout}`);
+    return ok({ message: r.stdout.trim() });
+  },
+);
+
+server.registerTool(
+  "oe_collections_sync_db",
+  {
+    title: "Sync Collections + Memberships to SQLite",
+    description:
+      "Refresh collections and memberships from the API into local SQLite. Prunes collections + memberships the server no longer reports.",
+    inputSchema: z.object({
+      rate_seconds: z.number().min(0.1).max(10).default(1.0).optional(),
+    }),
+  },
+  async (args) => {
+    const r = await runCollectionSort(config, ["sync-collections"], {
+      rateSeconds: args.rate_seconds,
+    });
+    if (r.code !== 0) return fail(`sync-collections failed: ${r.stderr || r.stdout}`);
+    return ok({ message: r.stdout.trim() });
+  },
+);
+
+server.registerTool(
+  "oe_collections_unsorted",
+  {
+    title: "List Unsorted Chats",
+    description:
+      "Chats with no membership in any '#'-prefixed collection. Returns {unsorted_count, shown, items[]}.",
+    inputSchema: z.object({
+      limit: z.number().int().min(1).max(2000).default(200).optional(),
+      preview_chars: z.number().int().min(20).max(2000).default(240).optional(),
+    }),
+  },
+  async (args) => {
+    const cliArgs: string[] = ["list-unsorted", "--json"];
+    if (args.limit !== undefined) cliArgs.push("--limit", String(args.limit));
+    if (args.preview_chars !== undefined)
+      cliArgs.push("--preview-chars", String(args.preview_chars));
+    const r = await runCollectionSort(config, cliArgs);
+    if (r.code !== 0) return fail(`list-unsorted failed: ${r.stderr || r.stdout}`);
+    return ok(parseStdoutJson(r.stdout));
+  },
+);
+
+server.registerTool(
+  "oe_collections_summary",
+  {
+    title: "Collections Summary",
+    description: "Counts (chats, collections, hashtag, memberships, unsorted) + last sync timestamps.",
+  },
+  async () => {
+    const r = await runCollectionSort(config, ["summary"]);
+    if (r.code !== 0) return fail(`summary failed: ${r.stderr || r.stdout}`);
+    return ok(parseStdoutJson(r.stdout));
+  },
+);
+
+server.registerTool(
+  "oe_collections_bulk_apply",
+  {
+    title: "Bulk-Apply Hashtag Plan",
+    description:
+      "For each {article_id, hashtags[]} entry: ensure each '#'-prefixed collection exists, then add the article to it. Idempotent. Refuses non-'#' tags.",
+    inputSchema: z.object({
+      plan: z.array(
+        z.object({
+          article_id: z.string().uuid(),
+          hashtags: z.array(z.string().regex(/^#/)).min(1),
+        }),
+      ),
+      descriptions: z.record(z.string(), z.string()).optional(),
+      rate_seconds: z.number().min(0.1).max(10).default(0.5).optional(),
+    }),
+  },
+  async (args) => {
+    return await withTempPlan(args.plan, args.descriptions, async ({ planPath, descriptionsPath }) => {
+      const cliArgs: string[] = ["bulk-apply", planPath];
+      if (descriptionsPath) cliArgs.push("--descriptions", descriptionsPath);
+      const r = await runCollectionSort(config, cliArgs, { rateSeconds: args.rate_seconds });
+      if (r.code !== 0) return fail(`bulk-apply failed: ${r.stderr || r.stdout}`);
+      return ok({ message: r.stdout.trim() });
+    });
+  },
 );
 
 function formatArtifactsForResponse(

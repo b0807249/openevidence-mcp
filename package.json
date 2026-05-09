@@ -1,6 +1,6 @@
 {
   "name": "openevidence-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open-source MCP server for OpenEvidence clinical platform. Cookie-file auth, no API key required.",
   "main": "dist/server.js",
   "bin": {

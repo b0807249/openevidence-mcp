@@ -35,8 +35,32 @@ Tools:
 | `oe_history_list` | Read OpenEvidence history |
 | `oe_article_get` | Fetch an article by id and save artifacts |
 | `oe_ask` | Ask a question, optionally wait, and save artifacts |
+| `oe_collections_list` | List your collections |
+| `oe_collections_get` | Get a collection (incl. nested questions[] = membership list) |
+| `oe_collections_create` | Create a collection (agent-managed names should start with `#`) |
+| `oe_collections_add_article` | Add a chat to a collection |
+| `oe_collections_db_init` | Create the local SQLite mirror (idempotent) |
+| `oe_collections_sync_history` | Pull /api/article/list into local SQLite chats table |
+| `oe_collections_sync_db` | Refresh collections + memberships into SQLite |
+| `oe_collections_unsorted` | Chats with no `#`-collection membership; structured JSON |
+| `oe_collections_summary` | Counts + last sync timestamps |
+| `oe_collections_bulk_apply` | Mint missing `#`-collections + add memberships per `[{article_id, hashtags}]` plan |
 
 `oe_ask` and `oe_article_get` return BibTeX in the MCP response by default when artifacts are saved. Pass `include_bibtex: false` to keep the response smaller while still writing `citations.bib` to disk.
+
+### Collections sync & auto-sort routine
+
+`scripts/collection_sort.py` mirrors your chat history and collection memberships into a local SQLite (`~/.openevidence-mcp/db/oe.sqlite` by default; override with `OE_MCP_DB_PATH`). The companion routine `routines/collection-sort.md` walks an MCP client through syncing, surfacing unsorted chats, and applying multi-membership hashtag tags. The convention: collections whose name starts with `#` are agent-managed; collections without a leading hash are human-curated and the routine never touches them.
+
+The same pipeline is exposed as MCP tools (`oe_collections_db_init`, `oe_collections_sync_history`, `oe_collections_sync_db`, `oe_collections_unsorted`, `oe_collections_summary`, `oe_collections_bulk_apply`) — the TS server shells out to `scripts/collection_sort.py` via `python3` (override with `OE_MCP_PYTHON`) so the DataDome-safe HTTP path stays canonical.
+
+```bash
+python scripts/collection_sort.py init
+python scripts/collection_sort.py sync-history --full   # first time
+python scripts/collection_sort.py sync-collections
+python scripts/collection_sort.py list-unsorted --json  # routine reads this
+python scripts/collection_sort.py summary
+```
 
 Saved artifacts:
 
@@ -310,6 +334,8 @@ Then restart or open a fresh MCP client session if the old stdio server process 
 | `OE_MCP_CROSSREF_VALIDATE` | `1` | Set `0` to skip Crossref validation |
 | `OE_MCP_POLL_INTERVAL_MS` | `1200` | Poll interval for `oe_ask` |
 | `OE_MCP_POLL_TIMEOUT_MS` | `180000` | Default poll timeout |
+| `OE_MCP_DB_PATH` | `~/.openevidence-mcp/db/oe.sqlite` | Local SQLite mirror used by the collections tools |
+| `OE_MCP_PYTHON` | `python3` | Python interpreter the bridge tools spawn |
 
 ## Project Files
 

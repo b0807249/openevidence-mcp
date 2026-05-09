@@ -56,6 +56,38 @@ export class OpenEvidenceClient {
     return (await this.getJson(`/api/article/${articleId}`)) as Record<string, unknown>;
   }
 
+  async listCollections(): Promise<unknown[]> {
+    const data = await this.getJson("/api/collections/collections");
+    return Array.isArray(data) ? (data as unknown[]) : [];
+  }
+
+  async getCollection(collectionId: string): Promise<Record<string, unknown>> {
+    return (await this.getJson(
+      `/api/collections/collections/${collectionId}`,
+    )) as Record<string, unknown>;
+  }
+
+  async createCollection(
+    name: string,
+    description?: string,
+  ): Promise<Record<string, unknown>> {
+    const body = { name, description: description ?? "" };
+    return (await this.postJson("/api/collections/collections", body)) as Record<
+      string,
+      unknown
+    >;
+  }
+
+  async addArticleToCollection(
+    collectionId: string,
+    articleId: string,
+  ): Promise<Record<string, unknown>> {
+    return (await this.postJson(
+      `/api/collections/collections/${collectionId}/add_article`,
+      { article_id: articleId },
+    )) as Record<string, unknown>;
+  }
+
   async ask(payload: OpenEvidenceAskRequest): Promise<Record<string, unknown>> {
     const body: Record<string, unknown> = {
       article_type: payload.articleType ?? DEFAULT_ARTICLE_TYPE,
