@@ -14,6 +14,7 @@ PLIST="$PLIST_DIR/$LABEL.plist"
 LOG_DIR="$HOME/.openevidence-mcp/logs"
 HOUR="${OE_MCP_SYNC_HOUR:-2}"
 MINUTE="${OE_MCP_SYNC_MINUTE:-0}"
+MODE="${OE_MCP_SYNC_MODE:-}"   # empty=sync-only, --dry-run, or --auto
 
 uninstall() {
   if [ -f "$PLIST" ]; then
@@ -44,7 +45,7 @@ cat > "$PLIST" <<EOF
   <string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$WRAPPER</string>
+    <string>$WRAPPER</string>$([ -n "$MODE" ] && printf '\n    <string>%s</string>' "$MODE")
   </array>
   <key>WorkingDirectory</key>
   <string>$REPO_DIR</string>
@@ -75,7 +76,12 @@ launchctl load "$PLIST"
 echo "installed $PLIST"
 echo "label:    $LABEL"
 echo "schedule: ${HOUR}:$(printf '%02d' "$MINUTE") daily"
+echo "mode:     ${MODE:-sync-only}"
 echo "logs:     $LOG_DIR/sync.log"
 echo
 echo "test now:"
 echo "  launchctl start $LABEL && sleep 25 && tail -30 $LOG_DIR/sync.log"
+echo
+echo "to switch modes:"
+echo "  OE_MCP_SYNC_MODE=--dry-run $0   # syncs + writes proposed plan, no apply"
+echo "  OE_MCP_SYNC_MODE=--auto    $0   # full autonomous sort (sync + classify + apply)"

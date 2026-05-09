@@ -10,6 +10,7 @@ const PYTHON = process.env.OE_MCP_PYTHON ?? "python3";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const SCRIPT = path.join(REPO_ROOT, "scripts", "collection_sort.py");
+const CLASSIFY_SCRIPT = path.join(REPO_ROOT, "scripts", "classify.py");
 
 export interface RunResult {
   stdout: string;
@@ -32,9 +33,15 @@ export async function runCollectionSort(
   if (opts.rateSeconds !== undefined) baseArgs.push("--rate", String(opts.rateSeconds));
   if (opts.retries !== undefined) baseArgs.push("--retries", String(opts.retries));
   if (opts.verbose) baseArgs.push("--verbose");
-  const fullArgs = [...baseArgs, ...args];
+  return spawnPython([...baseArgs, ...args]);
+}
 
-  return await new Promise((resolve, reject) => {
+export async function runClassify(args: string[]): Promise<RunResult> {
+  return spawnPython([CLASSIFY_SCRIPT, ...args]);
+}
+
+function spawnPython(fullArgs: string[]): Promise<RunResult> {
+  return new Promise((resolve, reject) => {
     const child = spawn(PYTHON, fullArgs, { cwd: REPO_ROOT, env: process.env });
     let stdout = "";
     let stderr = "";

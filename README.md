@@ -44,6 +44,7 @@ Tools:
 | `oe_collections_sync_db` | Refresh collections + memberships into SQLite |
 | `oe_collections_unsorted` | Chats with no `#`-collection membership; structured JSON |
 | `oe_collections_summary` | Counts + last sync timestamps |
+| `oe_collections_classify` | Auto-classify unsorted chats using log-odds-ratio signatures learned from your existing memberships + curated keyword rules |
 | `oe_collections_bulk_apply` | Mint missing `#`-collections + add memberships per `[{article_id, hashtags}]` plan |
 
 `oe_ask` and `oe_article_get` return BibTeX in the MCP response by default when artifacts are saved. Pass `include_bibtex: false` to keep the response smaller while still writing `citations.bib` to disk.
@@ -74,6 +75,16 @@ bash scripts/install_launchd.sh --uninstall      # remove
 ```
 
 The wrapper (`scripts/collection_sync_cron.sh`) appends one block per run to `~/.openevidence-mcp/logs/sync.log` containing the sync-history / sync-collections / summary output. Override the log dir with `OE_MCP_LOG_DIR`.
+
+The wrapper takes an optional mode flag:
+
+| Mode | Behavior |
+| --- | --- |
+| (default) | sync only — chats accumulate as `unsorted` until you run the routine |
+| `--dry-run` | sync + classify; writes `proposed-plan.json` for review, no apply |
+| `--auto` | sync + classify + bulk-apply + reconcile; fully autonomous sort |
+
+`scripts/classify.py` runs offline, no API. It builds a per-tag log-odds-ratio signature (Monroe et al. 2008) from your existing memberships every run, OR'd with curated keyword rules. Validate quality on your data with `python scripts/classify.py validate` (held-out cross-validation; on the first 603 memberships I verified, hit-rate = 99.4% with recall ≈1.0; precision varies by tag — raise `--threshold` for tighter precision in `--auto` mode). Tune for headless use via `OE_MCP_AUTO_THRESHOLD` (default 12) and `OE_MCP_AUTO_TOP_K` (default 3). Switch the launchd job to autonomous mode with `OE_MCP_SYNC_MODE=--auto bash scripts/install_launchd.sh`.
 
 Saved artifacts:
 

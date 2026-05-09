@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import "dotenv/config";
 
+import { tmpdir } from "node:os";
+import path from "node:path";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -8,7 +11,7 @@ import { z } from "zod";
 import { extractFigures, saveArticleArtifacts } from "./citations.js";
 import { ensureConfigDirs, resolveConfig } from "./config.js";
 import { extractAnswerText, OpenEvidenceClient, resolveVisualTags } from "./openevidence-client.js";
-import { parseStdoutJson, runCollectionSort, withTempPlan } from "./python-bridge.js";
+import { parseStdoutJson, runClassify, runCollectionSort, withTempPlan } from "./python-bridge.js";
 import type { OpenEvidenceAskRequest } from "./types.js";
 
 const config = resolveConfig();
@@ -309,6 +312,45 @@ server.registerTool(
     const r = await runCollectionSort(config, ["summary"]);
     if (r.code !== 0) return fail(`summary failed: ${r.stderr || r.stdout}`);
     return ok(parseStdoutJson(r.stdout));
+  },
+);
+
+server.registerTool(
+  "oe_collections_classify",
+  {
+    title: "Auto-Classify Unsorted Chats",
+    description:
+      "Predict hashtags for every unsorted chat (or all chats with reclassify_all). Combines curated keyword rules with a per-tag log-odds-ratio signature trained from your existing memberships. Returns the proposed plan as JSON; use oe_collections_bulk_apply to actually write.",
+    inputSchema: z.object({
+      reclassify_all: z.boolean().default(false).optional(),
+      threshold: z.number().min(0).max(50).default(8).optional(),
+      top_k: z.number().int().min(1).max(10).default(3).optional(),
+      top_n_terms: z.number().int().min(5).max(100).default(20).optional(),
+      rules_only: z.boolean().default(false).optional(),
+      no_rules: z.boolean().default(false).optional(),
+    }),
+  },
+  async (args) => {
+    const tmp = path.join(tmpdir(), `oe-classify-${Date.now()}.json`);
+    const cliArgs: string[] = [
+      "--threshold", String(args.threshold ?? 8),
+      "--top-k", String(args.top_k ?? 3),
+      "--top-n-terms", String(args.top_n_terms ?? 20),
+    ];
+    if (args.rules_only) cliArgs.push("--rules-only");
+    if (args.no_rules) cliArgs.push("--no-rules");
+    cliArgs.push("classify", "--output", tmp, "--quiet");
+    if (args.reclassify_all) cliArgs.push("--reclassify-all");
+    const r = await runClassify(cliArgs);
+    if (r.code !== 0) return fail(`classify failed: ${r.stderr || r.stdout}`);
+    const fs = await import("node:fs/promises");
+    const plan = JSON.parse(await fs.readFile(tmp, "utf8"));
+    await fs.unlink(tmp).catch(() => {});
+    const counts: Record<string, number> = {};
+    for (const e of plan as { hashtags: string[] }[]) {
+      for (const t of e.hashtags) counts[t] = (counts[t] ?? 0) + 1;
+    }
+    return ok({ plan, count: plan.length, tag_distribution: counts });
   },
 );
 
