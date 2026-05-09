@@ -62,6 +62,19 @@ python scripts/collection_sort.py list-unsorted --json  # routine reads this
 python scripts/collection_sort.py summary
 ```
 
+#### Schedule the sync (macOS)
+
+The classification step needs the agent in the loop, but the sync side is pure I/O — install a daily launchd job that keeps the local SQLite mirror fresh so the next agent run has zero lag:
+
+```bash
+bash scripts/install_launchd.sh                  # daily 02:00 (override via OE_MCP_SYNC_HOUR / OE_MCP_SYNC_MINUTE)
+launchctl start com.htlin.openevidence-mcp.sync  # fire once now to verify
+tail -30 ~/.openevidence-mcp/logs/sync.log
+bash scripts/install_launchd.sh --uninstall      # remove
+```
+
+The wrapper (`scripts/collection_sync_cron.sh`) appends one block per run to `~/.openevidence-mcp/logs/sync.log` containing the sync-history / sync-collections / summary output. Override the log dir with `OE_MCP_LOG_DIR`.
+
 Saved artifacts:
 
 | File | Purpose |
