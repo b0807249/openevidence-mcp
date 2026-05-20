@@ -19,6 +19,7 @@
   <img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-ready-6b7280">
   <img alt="Codex CLI" src="https://img.shields.io/badge/Codex%20CLI-ready-111827">
   <img alt="Gemini CLI" src="https://img.shields.io/badge/Gemini%20CLI-ready-4285f4">
+  <img alt="Antigravity CLI" src="https://img.shields.io/badge/Antigravity%20CLI-ready-8b5cf6">
 </p>
 
 ## What It Does
@@ -160,7 +161,9 @@ startup_timeout_sec = 60
 OE_MCP_COOKIES_PATH = "/ABSOLUTE/PATH/openevidence-mcp/cookies.json"
 ```
 
-### Gemini CLI
+### Gemini CLI / Antigravity CLI
+
+For both Gemini CLI and Antigravity CLI, you can use the same installation target, as they share the underlying configuration schema:
 
 ```bash
 make install-gemini-global
