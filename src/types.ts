@@ -1,3 +1,5 @@
+import type { ClinicalPriority } from "./rate-limit.js";
+
 export interface OpenEvidenceAskRequest {
   question: string;
   originalArticleId?: string;
@@ -5,6 +7,7 @@ export interface OpenEvidenceAskRequest {
   personalizationEnabled?: boolean;
   disableCaching?: boolean;
   variantConfigurationFile?: string;
+  priority?: ClinicalPriority;
 }
 
 export interface WaitOptions {

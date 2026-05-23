@@ -3,6 +3,15 @@ import { constants } from "node:fs";
 
 import type { AppConfig } from "./config.js";
 import { CookieJar } from "./cookies.js";
+import {
+  HttpError,
+  RateLimitController,
+  parseRetryAfterMs,
+  withExponentialBackoff,
+  type ClinicalPriority,
+  type RateLimitConfig,
+  type RateLimitMetrics,
+} from "./rate-limit.js";
 import type { AuthStatusResult, OpenEvidenceAskRequest, WaitOptions } from "./types.js";
 
 const DEFAULT_ARTICLE_TYPE = "Ask OpenEvidence Light with citations";
@@ -10,8 +19,18 @@ const PENDING_STATUSES = new Set(["queued", "pending", "processing", "running", 
 
 export class OpenEvidenceClient {
   private cookieJar: CookieJar | null = null;
+  private readonly limiter: RateLimitController;
 
-  constructor(private readonly config: AppConfig) {}
+  constructor(private readonly config: AppConfig, rateLimitConfig?: Partial<RateLimitConfig>) {
+    const merged = config.rateLimit;
+    this.limiter = new RateLimitController(
+      rateLimitConfig ? { ...merged, ...rateLimitConfig } : merged,
+    );
+  }
+
+  getRateLimitMetrics(): RateLimitMetrics {
+    return this.limiter.getMetrics();
+  }
 
   async init(): Promise<void> {
     await access(this.config.cookiesPath, constants.R_OK);
@@ -23,7 +42,7 @@ export class OpenEvidenceClient {
   }
 
   async getAuthStatus(): Promise<AuthStatusResult> {
-    const res = await this.get("/api/auth/me");
+    const res = await this.requestWithRateLimit("/api/auth/me", undefined, "urgent");
     const statusCode = res.status;
     if (statusCode !== 200) {
       return {
@@ -105,7 +124,10 @@ export class OpenEvidenceClient {
       body.original_article = payload.originalArticleId;
     }
 
-    return (await this.postJson("/api/article", body)) as Record<string, unknown>;
+    return (await this.postJson("/api/article", body, payload.priority)) as Record<
+      string,
+      unknown
+    >;
   }
 
   async waitForArticle(articleId: string, options?: WaitOptions): Promise<Record<string, unknown>> {
@@ -124,7 +146,7 @@ export class OpenEvidenceClient {
         return article;
       }
 
-      await sleep(intervalMs);
+      await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
     }
   }
 
@@ -135,58 +157,64 @@ export class OpenEvidenceClient {
     return this.cookieJar;
   }
 
-  private async getJson(url: string): Promise<unknown> {
-    const res = await this.getWithRetry(url, 3);
-    await assertJsonResponse(res, url);
+  private async getJson(url: string, priority?: ClinicalPriority): Promise<unknown> {
+    const res = await this.requestWithRateLimit(url, undefined, priority);
+    await assertSuccessResponse(res, "GET", url);
     return res.json();
   }
 
-  private async postJson(url: string, body: unknown): Promise<unknown> {
-    const res = await this.postWithRetry(url, body, 2);
-    const status = res.status;
-    if (status !== 200 && status !== 201) {
-      const text = await res.text();
-      throw new Error(`POST ${url} failed: ${status} ${text.slice(0, 400)}`);
-    }
-    return res.json();
-  }
-
-  private async getWithRetry(url: string, attempts: number) {
-    let last = await this.get(url);
-    for (let i = 1; i < attempts; i++) {
-      if (last.status < 500) {
-        return last;
-      }
-      await sleep(i * 400);
-      last = await this.get(url);
-    }
-    return last;
-  }
-
-  private async postWithRetry(url: string, body: unknown, attempts: number) {
-    let last = await this.post(url, body);
-    for (let i = 1; i < attempts; i++) {
-      if (last.status < 500) {
-        return last;
-      }
-      await sleep(i * 400);
-      last = await this.post(url, body);
-    }
-    return last;
-  }
-
-  private get(url: string): Promise<Response> {
-    return this.fetchWithCookies(url);
-  }
-
-  private post(url: string, body: unknown): Promise<Response> {
-    return this.fetchWithCookies(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+  private async postJson(
+    url: string,
+    body: unknown,
+    priority?: ClinicalPriority,
+  ): Promise<unknown> {
+    const res = await this.requestWithRateLimit(
+      url,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      priority,
+    );
+    await assertSuccessResponse(res, "POST", url);
+    return res.json();
+  }
+
+  /**
+   * Self-harnessed request: the limiter throttles us before we burst, and
+   * withExponentialBackoff retries 429 / 5xx while honoring Retry-After.
+   * 4xx (except retryable) propagates immediately.
+   */
+  private async requestWithRateLimit(
+    url: string,
+    init: RequestInit | undefined,
+    priority: ClinicalPriority = "routine",
+  ): Promise<Response> {
+    return withExponentialBackoff(
+      async () => {
+        await this.limiter.acquire(priority);
+        try {
+          const res = await this.fetchWithCookies(url, init ?? {});
+          this.limiter.observe({ status: res.status, headers: res.headers });
+          if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
+            const retryAfterMs =
+              parseRetryAfterMs(res.headers.get("retry-after"), Date.now()) ?? undefined;
+            const snippet = await safeReadSnippet(res);
+            throw new HttpError(
+              `${init?.method ?? "GET"} ${url} -> ${res.status} ${snippet}`,
+              res.status,
+              retryAfterMs,
+              res.headers,
+            );
+          }
+          return res;
+        } finally {
+          this.limiter.release();
+        }
+      },
+      this.config.rateLimit.retry,
+    );
   }
 
   private fetchWithCookies(url: string, init: RequestInit = {}): Promise<Response> {
@@ -217,17 +245,22 @@ export class OpenEvidenceClient {
   }
 }
 
-async function assertJsonResponse(res: Response, url: string): Promise<void> {
+async function assertSuccessResponse(res: Response, method: string, url: string): Promise<void> {
   const status = res.status;
   if (status >= 200 && status < 300) {
     return;
   }
   const text = await res.text();
-  throw new Error(`GET ${url} failed with status ${status}: ${text.slice(0, 400)}`);
+  throw new Error(`${method} ${url} failed with status ${status}: ${text.slice(0, 400)}`);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function safeReadSnippet(res: Response): Promise<string> {
+  try {
+    const text = await res.clone().text();
+    return text.slice(0, 200);
+  } catch {
+    return "";
+  }
 }
 
 export function extractAnswerText(article: Record<string, unknown>): string | null {
