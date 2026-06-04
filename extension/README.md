@@ -27,12 +27,26 @@ The extension keeps **one pinned, background OpenEvidence tab** (tracked by tab
 id, so it never touches an OE tab you opened yourself) and runs the POST there.
 You won't see any navigation; the tab just sits on openevidence.com.
 
+## Build
+
+Source lives in `extension/` (TypeScript); the loadable artifact is built to
+`dist/extension/`:
+
+```
+make extension          # or: npm run build:extension
+```
+
+This bundles `extension/src/background.ts` → `dist/extension/background.js` and
+copies the manifest. The relay port is baked in from `OE_MCP_RELAY_PORT`
+(default `8787`) — rebuild if you change it.
+
 ## Install (one time)
 
-1. Open `brave://extensions` (or `chrome://extensions`).
-2. Toggle **Developer mode** on (top right).
-3. Click **Load unpacked** and select this `extension/` folder.
-4. Make sure you are **logged in to openevidence.com** in this same browser.
+1. Build it (above) so `dist/extension/` exists.
+2. Open `brave://extensions` (or `chrome://extensions`).
+3. Toggle **Developer mode** on (top right).
+4. Click **Load unpacked** and select the built **`dist/extension/`** folder.
+5. Make sure you are **logged in to openevidence.com** in this same browser.
 
 That's it. The service worker auto-connects to the relay and re-connects on
 browser restart. When it first runs the in-tab POST, Brave may ask once to allow
@@ -47,8 +61,9 @@ the extension to access openevidence.com — allow it.
 
 ## Config
 
-- Relay port: `OE_MCP_RELAY_PORT` on the server (default `8787`). If you change
-  it, update `RELAY_BASE` at the top of `background.js` to match.
+- Relay port: `OE_MCP_RELAY_PORT` on the server (default `8787`). The same env var
+  is baked into the extension at build time, so set it before `make extension` and
+  rebuild + reload the extension if you change it.
 - Disable the relay entirely: `OE_MCP_RELAY=0` on the server.
 
 ## Checking it's connected

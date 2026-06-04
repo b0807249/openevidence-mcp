@@ -11,6 +11,8 @@
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
+		"build:extension": "node scripts/build-extension.mjs",
+		"check:extension": "tsc -p extension/tsconfig.json",
 		"dev": "tsx src/server.ts",
 		"start": "node dist/server.js",
 		"login": "tsx src/login.ts",
@@ -65,7 +67,9 @@
 		"zod": "^4.3.6"
 	},
 	"devDependencies": {
+		"@types/chrome": "^0.1.42",
 		"@types/node": "^25.3.0",
+		"esbuild": "^0.28.0",
 		"tsx": "^4.21.0",
 		"typescript": "^5.9.3"
 	}
