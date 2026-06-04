@@ -500,14 +500,24 @@ async function withClient(
 	const client = new OpenEvidenceClient(config);
 	if (config.relayTransport === "all") {
 		const relay = await getRelay();
-		if (relay && relay.isConnected()) client.useRelay(relay);
+		if (!relay || !relay.isConnected()) {
+			return fail(
+				"OpenEvidence MCP runs entirely through the browser-extension relay. " +
+					"Load extension/dist in your browser (chrome://extensions → Load unpacked), " +
+					"keep a logged-in openevidence.com tab open, then retry. " +
+					"(Set OE_MCP_RELAY_TRANSPORT=off to fall back to the legacy cookie path.)",
+			);
+		}
+		client.useRelay(relay);
 	}
 	try {
 		await client.init();
 		const auth = await client.getAuthStatus();
 		if (!auth.authenticated) {
 			return fail(
-				`Session is not authenticated (status ${auth.statusCode}). Paste fresh browser cookies into ${config.cookiesPath} and run: npm run login`,
+				config.relayTransport === "all"
+					? `Session is not authenticated (status ${auth.statusCode}). The relay's openevidence.com tab is not logged in — sign in there, then retry.`
+					: `Session is not authenticated (status ${auth.statusCode}). Paste fresh browser cookies into ${config.cookiesPath} and run: npm run login`,
 			);
 		}
 		return await fn(client);

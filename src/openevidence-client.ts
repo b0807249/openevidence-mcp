@@ -138,10 +138,12 @@ export class OpenEvidenceClient {
   }
 
   /**
-   * @deprecated Submitting the ask as a direct Node POST is DataDome-blocked
-   * unless this client is routed through the extension relay (`useRelay()` /
-   * `OE_MCP_RELAY_TRANSPORT=all`). The `oe_ask` tool no longer calls this; it
-   * sends the POST through the relay. Kept for relay-transport callers/tests.
+   * Submit the ask (POST /api/article). With a connected relay (the default
+   * OE_MCP_RELAY_TRANSPORT=all) this runs inside your logged-in browser tab, so it
+   * clears DataDome and the created article is owned by that same session — the
+   * follow-up reads can see it. Without a relay it falls back to a direct Node
+   * POST, which DataDome blocks; only the cookie-path tooling (doctor/smoke) and
+   * tests should ever reach that branch.
    */
   async ask(payload: OpenEvidenceAskRequest): Promise<Record<string, unknown>> {
     const body = buildAskBody(payload);
@@ -158,7 +160,22 @@ export class OpenEvidenceClient {
     const started = Date.now();
 
     while (true) {
-      const article = await this.getArticle(articleId);
+      let article: Record<string, unknown>;
+      try {
+        article = await this.getArticle(articleId);
+      } catch (error) {
+        // A just-created article 404s until OpenEvidence finishes provisioning it.
+        // Treat that as "still pending" and keep polling rather than aborting the ask.
+        if (
+          error instanceof HttpError &&
+          error.status === 404 &&
+          Date.now() - started <= timeoutMs
+        ) {
+          await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+          continue;
+        }
+        throw error;
+      }
       const status = String(article.status ?? "").toLowerCase();
       if (status.length > 0 && !PENDING_STATUSES.has(status)) {
         return article;
@@ -427,7 +444,7 @@ async function assertSuccessResponse(res: Response, method: string, url: string)
     return;
   }
   const text = await res.text();
-  throw new Error(`${method} ${url} failed with status ${status}: ${text.slice(0, 400)}`);
+  throw new HttpError(`${method} ${url} failed with status ${status}: ${text.slice(0, 400)}`, status);
 }
 
 async function safeReadSnippet(res: Response): Promise<string> {

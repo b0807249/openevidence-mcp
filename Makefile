@@ -18,7 +18,11 @@ SERVER := $(CURDIR)/dist/server.js
 VERSION := $(shell $(NODE) -p "require('$(CURDIR)/package.json').version")
 EXT_VERSION := $(shell $(NODE) -p "require('$(CURDIR)/extension/package.json').version")
 
-.PHONY: deps build extension check test smoke fingerprint import-cookies update-dotflows update-dotflows-from-har sync-mine sync-mine-from-har install-claude-global install-codex-global install-agy-global install-all remove-claude-global remove-codex-global remove-agy-global reinstall-claude-global reinstall-codex-global reinstall-agy-global release publish release-extension clean
+.PHONY: all deps build extension check test smoke fingerprint import-cookies update-dotflows update-dotflows-from-har sync-mine sync-mine-from-har install-claude-global install-codex-global install-agy-global install-all remove-claude-global remove-codex-global remove-agy-global reinstall-claude-global reinstall-codex-global reinstall-agy-global release publish release-extension clean
+
+# Build everything: the MCP server (dist/server.js) and the relay extension
+# (extension/dist). This is the default goal, so bare `make` builds both.
+all: build extension
 
 deps:
 	$(NPM) install
