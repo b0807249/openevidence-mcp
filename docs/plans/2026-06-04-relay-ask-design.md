@@ -53,6 +53,12 @@ via_browser=true` flag. Two changes make it the seamless default:
 3. **Robust tab open** (`src/ask-browser.ts`, `defaultOpenUrl`): the background
    AppleScript can raise an AppleEvent timeout (`-1712`) on a busy browser; we now
    degrade to the reliable `open -g <url>` instead of failing the ask.
+4. **Reuse one OE tab** (`src/ask-browser.ts`, `backgroundTabScript`): instead of
+   opening a new tab per ask, the AppleScript finds an existing openevidence.com
+   tab and navigates it in place (a background tab nav steals neither focus nor the
+   active-tab slot). It only opens a fresh tab when none exists; the tab stays on
+   openevidence.com (`/ask/<id>`) so it keeps being reused. Quietest when pointed at
+   a browser you don't actively use (`OE_MCP_BROWSER_APP`).
 
 ### Flow
 
