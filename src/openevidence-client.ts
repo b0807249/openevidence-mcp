@@ -24,9 +24,19 @@ import type { AuthStatusResult, OpenEvidenceAskRequest, WaitOptions } from "./ty
 const DEFAULT_ARTICLE_TYPE = "Ask OpenEvidence Light with citations";
 const PENDING_STATUSES = new Set(["queued", "pending", "processing", "running", "in_progress"]);
 
+export interface RelayTransport {
+  isConnected(): boolean;
+  request(req: {
+    method: string;
+    path: string;
+    body?: string;
+  }): Promise<{ status: number; body: string }>;
+}
+
 export class OpenEvidenceClient {
   private cookieJar: CookieJar | null = null;
   private fingerprint: BrowserFingerprint = DEFAULT_BROWSER_FINGERPRINT;
+  private relay: RelayTransport | null = null;
   private readonly limiter: RateLimitController;
 
   constructor(private readonly config: AppConfig, rateLimitConfig?: Partial<RateLimitConfig>) {
@@ -40,9 +50,20 @@ export class OpenEvidenceClient {
     return this.limiter.getMetrics();
   }
 
+  /**
+   * Route all requests through a connected browser-extension relay (the browser's
+   * own authenticated session) instead of Node + cookies. DataDome never sees a
+   * Node request, and no cookie file is required.
+   */
+  useRelay(relay: RelayTransport): void {
+    this.relay = relay;
+  }
+
   async init(): Promise<void> {
-    await access(this.config.cookiesPath, constants.R_OK);
     this.fingerprint = await loadBrowserFingerprint(this.config.fingerprintPath);
+    // With a connected relay the browser session is the auth — no cookie file needed.
+    if (this.relay?.isConnected()) return;
+    await access(this.config.cookiesPath, constants.R_OK);
     this.cookieJar = await CookieJar.fromFile(this.config.cookiesPath, this.config.baseUrl);
   }
 
@@ -117,21 +138,7 @@ export class OpenEvidenceClient {
   }
 
   async ask(payload: OpenEvidenceAskRequest): Promise<Record<string, unknown>> {
-    const body: Record<string, unknown> = {
-      article_type: payload.articleType ?? DEFAULT_ARTICLE_TYPE,
-      inputs: {
-        variant_configuration_file: payload.variantConfigurationFile ?? "prod",
-        attachments: [],
-        question: payload.question,
-        use_gatekeeper: true,
-      },
-      personalization_enabled: payload.personalizationEnabled ?? false,
-      disable_caching: payload.disableCaching ?? false,
-    };
-
-    if (payload.originalArticleId) {
-      body.original_article = payload.originalArticleId;
-    }
+    const body = buildAskBody(payload);
 
     return (await this.postJson("/api/article", body, payload.priority)) as Record<
       string,
@@ -238,6 +245,9 @@ export class OpenEvidenceClient {
 
   private fetchWithCookies(url: string, init: RequestInit = {}): Promise<Response> {
     const fullUrl = new URL(url, this.config.baseUrl);
+    if (this.relay?.isConnected()) {
+      return this.fetchViaRelay(fullUrl, init);
+    }
     const cookie = this.api().headerFor(fullUrl.toString());
     if (!cookie) {
       throw new Error(`No cookies in ${this.config.cookiesPath} match ${fullUrl.hostname}`);
@@ -250,6 +260,48 @@ export class OpenEvidenceClient {
       headers,
     });
   }
+
+  /** Run a request through the extension relay and adapt it back to a Response. */
+  private async fetchViaRelay(fullUrl: URL, init: RequestInit): Promise<Response> {
+    const relay = this.relay;
+    if (!relay) throw new Error("relay transport not set");
+    const method = String(init.method ?? "GET").toUpperCase();
+    const body = typeof init.body === "string" ? init.body : undefined;
+    const { status, body: respBody } = await relay.request({
+      method,
+      path: fullUrl.pathname + fullUrl.search,
+      body,
+    });
+    const nullBody = status === 204 || status === 205 || status === 304;
+    return new Response(nullBody ? null : respBody, {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  }
+}
+
+/**
+ * Build the `POST /api/article` request body. Shared by the Node client and the
+ * browser-extension relay so both submit a byte-identical ask.
+ */
+export function buildAskBody(payload: OpenEvidenceAskRequest): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    article_type: payload.articleType ?? DEFAULT_ARTICLE_TYPE,
+    inputs: {
+      variant_configuration_file: payload.variantConfigurationFile ?? "prod",
+      attachments: [],
+      question: payload.question,
+      use_gatekeeper: true,
+    },
+    personalization_enabled: payload.personalizationEnabled ?? false,
+    disable_caching: payload.disableCaching ?? false,
+  };
+
+  if (payload.originalArticleId) {
+    body.original_article = payload.originalArticleId;
+  }
+
+  return body;
 }
 
 export function buildOpenEvidenceHeaders(

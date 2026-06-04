@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   askViaBrowser,
+  backgroundTabScript,
   buildAskUrl,
   historyEntries,
   openCommand,
@@ -35,6 +36,27 @@ test("openCommand: macOS with a known browserApp uses AppleScript (no activate)"
   assert.match(script, /tell application "Brave Browser"/);
   assert.match(script, /make new tab with properties \{URL:"https:\/\/x\/ask\?q=1&a=2"\}/);
   assert.doesNotMatch(script, /activate/);
+});
+
+test("backgroundTabScript: reuses an existing OpenEvidence tab in place", () => {
+  const script = backgroundTabScript(
+    "Brave Browser",
+    "https://www.openevidence.com/ask?query=x",
+  ).join("\n");
+  // Finds an OE tab and navigates it in place instead of always opening a new one.
+  assert.match(script, /contains "openevidence\.com"/);
+  assert.match(
+    script,
+    /set URL of t to "https:\/\/www\.openevidence\.com\/ask\?query=x"/,
+  );
+  // Still creates a tab only as the no-existing-tab fallback, and never activates.
+  assert.match(script, /if not didReuse then/);
+  assert.doesNotMatch(script, /activate/);
+});
+
+test("backgroundTabScript: Safari uses documents for the empty-window fallback", () => {
+  const script = backgroundTabScript("Safari", "https://www.openevidence.com/ask").join("\n");
+  assert.match(script, /if \(count of documents\) is 0 then make new document/);
 });
 
 test("openCommand: macOS background without browserApp falls back to `open -g`", () => {

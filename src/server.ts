@@ -9,9 +9,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { askViaBrowser, detectMacDefaultBrowserApp } from "./ask-browser.js";
+import { startRelayServer, type RelayServer } from "./relay-server.js";
 import { extractFigures, saveArticleArtifacts } from "./citations.js";
 import { ensureConfigDirs, resolveConfig } from "./config.js";
 import {
+	DataDomeChallengeError,
+	buildAskBody,
 	extractAnswerText,
 	OpenEvidenceClient,
 	resolveVisualTags,
@@ -26,6 +29,24 @@ import type { OpenEvidenceAskRequest } from "./types.js";
 
 const config = resolveConfig();
 ensureConfigDirs(config);
+
+let relayServerPromise: Promise<RelayServer | null> | null = null;
+function getRelay(): Promise<RelayServer | null> {
+	if (!config.relayEnabled) return Promise.resolve(null);
+	if (!relayServerPromise) {
+		relayServerPromise = startRelayServer({
+			port: config.relayPort,
+			logger: (m) => process.stderr.write(`[relay] ${m}\n`),
+		}).catch((err) => {
+			process.stderr.write(`[relay] failed to start: ${String(err)}\n`);
+			return null;
+		});
+	}
+	return relayServerPromise;
+}
+
+// Start the relay eagerly so the extension can connect as soon as the server is up.
+void getRelay();
 
 const server = new McpServer({
 	name: "openevidence-mcp",
@@ -111,8 +132,8 @@ server.registerTool(
 		title: "OpenEvidence Ask",
 		description:
 			"Create a question and optionally wait for completion. For follow-up question pass original_article_id. " +
-			"Set via_browser=true to submit through your real logged-in browser (bypasses DataDome on the POST); " +
-			"the id is recovered by diffing history.",
+			"If the Node POST is DataDome-blocked it automatically falls back to your real logged-in browser (disable via OE_MCP_BROWSER_FALLBACK=0); set via_browser=true to force the browser path; " +
+			"the id is then recovered by diffing history.",
 		inputSchema: z.object({
 			question: z.string().min(3).max(6000),
 			original_article_id: z.string().uuid().optional(),
@@ -144,16 +165,17 @@ server.registerTool(
 		withClient(async (client) => {
 			const timeoutMs = (args.timeout_sec ?? 120) * 1000;
 			const intervalMs = args.poll_interval_ms ?? config.pollIntervalMs;
-			let articleId: string;
-			let article: Record<string, unknown>;
+			let articleId = "";
+			let article: Record<string, unknown> = {};
 			let note: string | undefined;
-
-			if (args.via_browser) {
-				// Browser-driven: the real browser does the (DataDome-fronted) POST;
-				// we recover the new article id by diffing history (a read, not blocked).
+			
+			// Browser-driven: the real browser does the (DataDome-fronted) POST;
+			// we recover the new article id by diffing history (a read, not blocked).
+			const runViaBrowser = async (reason?: string): Promise<void> => {
 				if (args.original_article_id) {
-					note =
-						"via_browser does not support follow-ups yet; ran as a fresh question.";
+					note = `${reason ? `${reason} ` : ""}via_browser does not support follow-ups yet; ran as a fresh question.`;
+				} else if (reason) {
+					note = reason;
 				}
 				const result = await askViaBrowser(client, config.baseUrl, {
 					question: args.question,
@@ -170,6 +192,10 @@ server.registerTool(
 				});
 				articleId = result.articleId;
 				article = result.article;
+			};
+			
+			if (args.via_browser) {
+				await runViaBrowser();
 			} else {
 				const askPayload: OpenEvidenceAskRequest = {
 					question: args.question,
@@ -179,26 +205,71 @@ server.registerTool(
 					articleType: args.article_type,
 					variantConfigurationFile: args.variant_configuration_file,
 				};
-
-				const created = await client.ask(askPayload);
-				articleId = String(created.id ?? "");
-				if (!articleId) {
-					return fail("OpenEvidence returned no article id.");
-				}
-
-				const waitForCompletion = args.wait_for_completion ?? true;
-				if (!waitForCompletion) {
-					return ok({
-						created,
-						article_id: articleId,
-						note: "Article created. Poll with oe_article_get.",
+			
+				try {
+					const created = await client.ask(askPayload);
+					articleId = String(created.id ?? "");
+					if (!articleId) {
+						return fail("OpenEvidence returned no article id.");
+					}
+			
+					const waitForCompletion = args.wait_for_completion ?? true;
+					if (!waitForCompletion) {
+						return ok({
+							created,
+							article_id: articleId,
+							note: "Article created. Poll with oe_article_get.",
+						});
+					}
+			
+					article = await client.waitForArticle(articleId, {
+						timeoutMs,
+						intervalMs,
 					});
+				} catch (error) {
+					// The ask submission (POST /api/article) is the one path DataDome
+					// blocks from Node. Re-issue it through the real logged-in browser,
+					// whose TLS fingerprint is unfakeable, instead of failing.
+					if (!(error instanceof DataDomeChallengeError)) {
+						throw error;
+					}
+					const relay = await getRelay();
+					if (relay && relay.isConnected()) {
+						process.stderr.write(
+							`[oe_ask] Node POST DataDome-blocked; routing via the Brave extension relay.\n`,
+						);
+						const resp = await relay.request(
+							{
+								method: "POST",
+								path: "/api/article",
+								body: JSON.stringify(buildAskBody(askPayload)),
+							},
+							{ timeoutMs },
+						);
+						if (resp.status < 200 || resp.status >= 300) {
+							throw new Error(
+								`relay POST /api/article -> ${resp.status} ${resp.body.slice(0, 200)}`,
+							);
+						}
+						const created = JSON.parse(resp.body) as { id?: string };
+						articleId = String(created.id ?? "");
+						if (!articleId) {
+							throw new Error("relay POST returned no article id");
+						}
+						note =
+							"Node POST was DataDome-blocked; submitted via the Brave extension relay.";
+						article = await client.waitForArticle(articleId, { timeoutMs, intervalMs });
+					} else if (config.browserFallback) {
+						process.stderr.write(
+							`[oe_ask] Node POST DataDome-blocked; falling back to browser. ${error.message}\n`,
+						);
+						await runViaBrowser(
+							"Node POST was DataDome-blocked; recovered via your real logged-in browser.",
+						);
+					} else {
+						throw error;
+					}
 				}
-
-				article = await client.waitForArticle(articleId, {
-					timeoutMs,
-					intervalMs,
-				});
 			}
 
 			const figures = extractFigures(article);
@@ -494,6 +565,10 @@ async function withClient(
 	}>,
 ) {
 	const client = new OpenEvidenceClient(config);
+	if (config.relayTransport === "all") {
+		const relay = await getRelay();
+		if (relay && relay.isConnected()) client.useRelay(relay);
+	}
 	try {
 		await client.init();
 		const auth = await client.getAuthStatus();

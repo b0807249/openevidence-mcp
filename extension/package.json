@@ -1,0 +1,16 @@
+{
+  "name": "openevidence-mcp-relay-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Brave/Chrome extension companion for openevidence-mcp: runs the ask POST inside a real logged-in OpenEvidence tab so the MCP server never hits DataDome. Localhost-only.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.42",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.9.3"
+  }
+}

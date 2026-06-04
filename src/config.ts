@@ -14,6 +14,29 @@ export interface AppConfig {
   crossrefValidate: boolean;
   pollIntervalMs: number;
   pollTimeoutMs: number;
+  /**
+   * When the Node `POST /api/article` is DataDome-blocked (403), automatically
+   * re-run the ask through the real logged-in browser (`askViaBrowser`) instead
+   * of surfacing the challenge. On by default; set OE_MCP_BROWSER_FALLBACK=0 to
+   * fail fast (e.g. headless servers with no GUI browser).
+   */
+  browserFallback: boolean;
+  /**
+   * Run a localhost relay that lets the Brave/Chrome extension submit the ask
+   * POST from inside a real OpenEvidence tab (page-context TLS/cookies ⇒ DataDome
+   * passes). When the extension is connected it is preferred over the open-url
+   * browser fallback. On by default; set OE_MCP_RELAY=0 to disable.
+   */
+  relayEnabled: boolean;
+  /** Port the relay HTTP server listens on (must match the extension). */
+  relayPort: number;
+  /**
+   * "off" (default): the relay is used only as the DataDome fallback for the ask
+   * POST. "all": route EVERY OpenEvidence request through the extension (the
+   * browser session is the sole auth — no cookies.json needed) whenever it is
+   * connected. Set with OE_MCP_RELAY_TRANSPORT=all.
+   */
+  relayTransport: "off" | "all";
   rateLimit: RateLimitConfig;
 }
 
@@ -47,6 +70,10 @@ export function resolveConfig(): AppConfig {
     crossrefValidate: process.env.OE_MCP_CROSSREF_VALIDATE !== "0",
     pollIntervalMs: parseInt(process.env.OE_MCP_POLL_INTERVAL_MS ?? "1200", 10),
     pollTimeoutMs: parseInt(process.env.OE_MCP_POLL_TIMEOUT_MS ?? "180000", 10),
+    browserFallback: process.env.OE_MCP_BROWSER_FALLBACK !== "0",
+    relayEnabled: process.env.OE_MCP_RELAY !== "0",
+    relayPort: parseInt(process.env.OE_MCP_RELAY_PORT ?? "8787", 10),
+    relayTransport: process.env.OE_MCP_RELAY_TRANSPORT === "all" ? "all" : "off",
     rateLimit: resolveRateLimitConfig(),
   };
 }

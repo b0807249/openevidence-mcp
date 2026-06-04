@@ -121,22 +121,38 @@ function isFirefox(app: string): boolean {
   return /firefox/i.test(app);
 }
 
-/** AppleScript that opens a background tab WITHOUT activating the browser. */
+/**
+ * AppleScript that drives a background ask WITHOUT activating the browser.
+ *
+ * Reuses an existing OpenEvidence tab when one is open — navigating a background
+ * tab in place neither steals focus nor the active-tab slot, and avoids piling up
+ * a new tab per ask. Only when no OE tab exists does it open a fresh one. The
+ * persistent tab's URL stays on openevidence.com (it becomes /ask/<id> after the
+ * answer), so it keeps being recognized and reused on the next ask.
+ */
 export function backgroundTabScript(browserApp: string, url: string): string[] {
   const safe = url.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  if (/safari/i.test(browserApp)) {
-    return [
-      `tell application "${browserApp}"`,
-      `  if (count of windows) is 0 then make new document`,
-      `  tell front window to make new tab with properties {URL:"${safe}"}`,
-      `end tell`,
-    ];
-  }
-  // Chromium family (Brave/Chrome/Edge/…): no `activate` keeps it backgrounded.
+  // Safari tracks an empty state via documents; the Chromium family via windows.
+  const ensureWindow = /safari/i.test(browserApp)
+    ? `    if (count of documents) is 0 then make new document`
+    : `    if (count of windows) is 0 then make new window`;
   return [
     `tell application "${browserApp}"`,
-    `  if (count of windows) is 0 then make new window`,
-    `  tell front window to make new tab with properties {URL:"${safe}"}`,
+    `  set didReuse to false`,
+    `  repeat with w in windows`,
+    `    repeat with t in tabs of w`,
+    `      if (URL of t as string) contains "openevidence.com" then`,
+    `        set URL of t to "${safe}"`,
+    `        set didReuse to true`,
+    `        exit repeat`,
+    `      end if`,
+    `    end repeat`,
+    `    if didReuse then exit repeat`,
+    `  end repeat`,
+    `  if not didReuse then`,
+    ensureWindow,
+    `    tell front window to make new tab with properties {URL:"${safe}"}`,
+    `  end if`,
     `end tell`,
   ];
 }
@@ -195,11 +211,29 @@ export function defaultOpenUrl(
   const [cmd, args] = openCommand(osPlatform(), url, options);
   return new Promise<void>((resolve, reject) => {
     execFile(cmd, args, (error) => {
-      if (error) {
-        reject(new Error(`Failed to open browser via \`${cmd}\`: ${error.message}`));
+      if (!error) {
+        resolve();
         return;
       }
-      resolve();
+      // AppleScript tab creation can raise an AppleEvent timeout (-1712) on a
+      // busy browser even though the tab does open. Rather than fail the whole
+      // ask, degrade to the simple, reliable `open -g <url>` (default browser).
+      if (cmd === "osascript" && osPlatform() === "darwin") {
+        execFile("open", ["-g", url], (fallbackError) => {
+          if (fallbackError) {
+            reject(
+              new Error(
+                `Failed to open browser: osascript errored (${error.message}) and ` +
+                  `\`open -g\` fallback also failed (${fallbackError.message}).`,
+              ),
+            );
+            return;
+          }
+          resolve();
+        });
+        return;
+      }
+      reject(new Error(`Failed to open browser via \`${cmd}\`: ${error.message}`));
     });
   });
 }
