@@ -14,6 +14,10 @@ storage-state.json
 openevidence-fingerprint*.json
 *.har
 
+# extension signing key — controls the extension's identity; never commit
+*.pem
+extension/key.pem
+
 # packaged skill bundles may carry cookies — keep local
 *.skill
 

@@ -1,0 +1,56 @@
+name: extension-release
+
+# On an `extension-v*` tag, build the extension and attach the unpacked zip and a
+# signed .crx to that tag's GitHub release (created if it doesn't exist yet).
+on:
+  push:
+    tags:
+      - "extension-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install & build
+        run: |
+          npm install
+          npm run build
+
+      - name: Write signing key
+        env:
+          CRX_PRIVATE_KEY: ${{ secrets.CRX_PRIVATE_KEY }}
+        run: printf '%s' "$CRX_PRIVATE_KEY" > key.pem
+
+      - name: Package zip + crx
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          (cd dist && zip -qr "../openevidence-mcp-relay-extension-$VERSION.zip" .)
+          npm run pack
+          mv dist/openevidence-mcp-relay-extension.crx "openevidence-mcp-relay-extension-$VERSION.crx"
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" \
+              --title "OpenEvidence MCP Relay extension $TAG" \
+              --notes "Automated build of the Brave/Chrome relay extension." \
+              --latest=false
+          gh release upload "$TAG" \
+            "openevidence-mcp-relay-extension-$VERSION.zip" \
+            "openevidence-mcp-relay-extension-$VERSION.crx" --clobber

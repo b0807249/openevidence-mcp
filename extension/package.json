@@ -6,10 +6,13 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "check": "tsc -p tsconfig.json"
+    "check": "tsc -p tsconfig.json",
+    "pack": "node pack-crx.mjs",
+    "dist": "npm run build && (cd dist && zip -qr ../openevidence-mcp-relay-extension.zip .) && npm run pack"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.42",
+    "crx3": "^2.0.0",
     "esbuild": "^0.28.0",
     "typescript": "^5.9.3"
   }
