@@ -419,9 +419,13 @@ Then restart or open a fresh MCP client session if the old stdio server process 
 
 ## Make Targets
 
+Run `make help` for a grouped, always-current list.
+
 | Target                                              | Purpose                                                               |
 | --------------------------------------------------- | --------------------------------------------------------------------- |
 | `make all` (or bare `make`)                         | **One-shot setup:** deps + build server + build extension + register into Claude & Codex (skips a CLI that isn't installed) |
+| `make help`                                         | Grouped reference of every target                                     |
+| `make kill-all`                                     | Stop all MCP servers + the relay daemon and free port 8787            |
 | `make deps`                                         | Force a fresh `npm install`                                           |
 | `make build HAR=/path/to/file.har`                  | Extract fingerprint if the HAR exists, then compile TypeScript        |
 | `make check`                                        | Type-check                                                            |
