@@ -20,7 +20,7 @@ SERVER := $(CURDIR)/dist/server.js
 VERSION := $(shell $(NODE) -p "require('$(CURDIR)/package.json').version")
 EXT_VERSION := $(shell $(NODE) -p "require('$(CURDIR)/extension/package.json').version")
 
-.PHONY: all deps build extension check test smoke fingerprint import-cookies update-dotflows update-dotflows-from-har sync-mine sync-mine-from-har install-claude-global install-codex-global install-agy-global install-all remove-claude-global remove-codex-global remove-agy-global reinstall-claude-global reinstall-codex-global reinstall-agy-global release publish release-extension kill-all clean
+.PHONY: all help deps build extension check test smoke fingerprint import-cookies update-dotflows update-dotflows-from-har sync-mine sync-mine-from-har install-claude-global install-codex-global install-agy-global install-all remove-claude-global remove-codex-global remove-agy-global reinstall-claude-global reinstall-codex-global reinstall-agy-global release publish release-extension kill-all clean
 
 # One command does the whole setup: install deps, build the MCP server
 # (dist/server.js) + the relay extension (extension/dist), and register the
@@ -36,6 +36,28 @@ all: node_modules build extension install-claude-global install-codex-global
 	@printf '      3. Load unpacked  →  %s\n' "$(CURDIR)/extension/dist"
 	@printf '      4. stay logged in to openevidence.com in that browser\n'
 	@printf '   verify:  curl -s http://127.0.0.1:8787/health   (expect connected:true)\n\n'
+
+help:
+	@printf '\033[1mOpenEvidence MCP — make targets\033[0m  (bare \`make\` == \`make all\`)\n\n'
+	@printf '\033[1mSetup (start here):\033[0m\n'
+	@printf '  make all            one-shot: deps + build server + build extension + register into Claude & Codex,\n'
+	@printf '                      then load the extension (chrome://extensions -> Load unpacked -> extension/dist)\n'
+	@printf '  make kill-all       stop all MCP servers + the relay daemon (free port %s)\n' "$(RELAY_PORT)"
+	@printf '\n\033[1mBuild & verify:\033[0m\n'
+	@printf '  make build [HAR=…]  compile dist/server.js (extracts fingerprint from HAR if given)\n'
+	@printf '  make extension      build the browser relay extension (extension/dist)\n'
+	@printf '  make deps           force a fresh npm install\n'
+	@printf '  make check / test / smoke    type-check / unit tests / auth+history smoke (cookie path)\n'
+	@printf '\n\033[1mRegister / unregister an AI CLI (HAR optional):\033[0m\n'
+	@printf '  make install-claude-global / install-codex-global / install-agy-global\n'
+	@printf '  make install-all    register with all three\n'
+	@printf '  make remove-claude-global / remove-codex-global / remove-agy-global\n'
+	@printf '\n\033[1mAuth & data (cookie path / Python tooling — optional):\033[0m\n'
+	@printf '  make import-cookies COOKIES=…   import + verify cookies\n'
+	@printf '  make fingerprint HAR=…          extract the browser fingerprint from a HAR\n'
+	@printf '  make update-dotflows / sync-mine    collections tooling\n'
+	@printf '\n\033[1mRelease:\033[0m\n'
+	@printf '  make release / publish / release-extension      make clean (remove dist/)\n\n'
 
 # Install npm deps only when package.json changes — keeps repeat `make` fast.
 node_modules: package.json
