@@ -156,8 +156,20 @@ async function pollLoop(): Promise<void> {
   }
 }
 
+// Open the bundled how-it-works page (its own extension tab).
+function openReadme(): void {
+  void chrome.tabs.create({ url: chrome.runtime.getURL("README.html") });
+}
+
+// Clicking the toolbar icon explains how the relay works.
+chrome.action.onClicked.addListener(() => openReadme());
+
 chrome.runtime.onStartup.addListener(() => void pollLoop());
-chrome.runtime.onInstalled.addListener(() => void pollLoop());
+chrome.runtime.onInstalled.addListener((details) => {
+  void pollLoop();
+  // Show the guide once, the first time the extension is installed.
+  if (details.reason === "install") openReadme();
+});
 chrome.alarms.create("oe-relay-keepalive", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === "oe-relay-keepalive") void pollLoop();

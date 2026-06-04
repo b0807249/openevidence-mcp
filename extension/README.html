@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenEvidence MCP Relay — How it works</title>
+<style>
+  :root {
+    --oe: #E23C1F;
+    --oe-dark: #B22E15;
+    --ink: #1b1b1d;
+    --muted: #5b5b62;
+    --line: #ececef;
+    --bg: #fafafb;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px 80px; }
+
+  header {
+    background: linear-gradient(135deg, var(--oe), var(--oe-dark));
+    color: #fff; padding: 40px 0 44px; margin-bottom: 32px;
+  }
+  .head-inner { max-width: 760px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 18px; }
+  .logo { width: 64px; height: 64px; border-radius: 15px; flex: none;
+          box-shadow: 0 6px 22px rgba(0,0,0,.22); }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.4px; }
+  .sub { margin: 0; opacity: .92; font-size: 15px; }
+
+  h2 { font-size: 18px; margin: 34px 0 12px; letter-spacing: -.2px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 20px 22px; margin: 14px 0; }
+
+  ol.steps { list-style: none; counter-reset: s; margin: 0; padding: 0; }
+  ol.steps > li { counter-increment: s; position: relative; padding: 0 0 18px 46px; }
+  ol.steps > li:last-child { padding-bottom: 0; }
+  ol.steps > li::before {
+    content: counter(s); position: absolute; left: 0; top: -2px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--oe); color: #fff; font-weight: 700; font-size: 14px;
+    display: grid; place-items: center;
+  }
+  li b { font-weight: 650; }
+
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; margin: 6px 0 4px; }
+  .flow .node { flex: 1 1 150px; background: #fff; border: 1px solid var(--line);
+                border-radius: 12px; padding: 12px 14px; font-size: 13.5px; }
+  .flow .node b { display: block; color: var(--oe-dark); margin-bottom: 2px; }
+  .flow .arrow { align-self: center; color: var(--oe); font-weight: 700; }
+
+  code, kbd { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+              background: #f3f3f5; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+  pre { background: #1d1d20; color: #f5f5f5; border-radius: 10px; padding: 14px 16px; overflow: auto; }
+  pre code { background: none; border: 0; color: inherit; padding: 0; }
+
+  .badge { display: inline-flex; align-items: center; gap: 8px; font-weight: 650;
+           border-radius: 999px; padding: 7px 14px; font-size: 14px; }
+  .badge .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+  .ok { background: #e8f7ee; color: #157a44; }
+  .bad { background: #fdecea; color: #b3260f; }
+  .wait { background: #f3f3f5; color: #5b5b62; }
+
+  .btn { appearance: none; border: 0; cursor: pointer; font: inherit; font-weight: 650;
+         background: var(--oe); color: #fff; border-radius: 10px; padding: 10px 18px; }
+  .btn:hover { background: var(--oe-dark); }
+  .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+  .callout { border-left: 4px solid var(--oe); background: #fff7f5; border-radius: 0 12px 12px 0;
+             padding: 14px 18px; margin: 14px 0; }
+  a { color: var(--oe-dark); }
+  footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+  ul.tidy { margin: 8px 0; padding-left: 20px; }
+  ul.tidy li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="head-inner">
+    <svg class="logo" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect width="128" height="128" rx="28" fill="#fff" opacity=".14"/>
+      <text x="64" y="64" text-anchor="middle" dominant-baseline="central"
+            font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+            font-weight="700" font-size="56" letter-spacing="-3" fill="#fff">OE</text>
+    </svg>
+    <div>
+      <h1>OpenEvidence MCP Relay</h1>
+      <p class="sub">Lets your AI tools query OpenEvidence through your own logged-in browser tab.</p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="card">
+    <div class="row">
+      <span id="status" class="badge wait"><span class="dot"></span>Checking relay…</span>
+      <button id="check" class="btn">Check connection</button>
+      <span class="muted" id="detail"></span>
+    </div>
+    <p class="muted" style="margin:12px 0 0">
+      Green means a Claude/Codex session can reach OpenEvidence right now. This page talks to the
+      local relay on <code>127.0.0.1:__RELAY_PORT__</code>.
+    </p>
+  </div>
+
+  <h2>What it does</h2>
+  <p>
+    OpenEvidence protects its API with bot detection that blocks plain server requests. This extension
+    removes that problem: when an AI tool (Claude Code, Codex, …) asks OpenEvidence a question through the
+    <b>openevidence-mcp</b> server, the request is run <b>inside your own logged-in OpenEvidence tab</b> —
+    so it carries your genuine browser session and is never challenged. The extension is a generic
+    authenticated fetch proxy; all the OpenEvidence logic stays in the local MCP server.
+  </p>
+
+  <h2>How it works</h2>
+  <div class="flow">
+    <div class="node"><b>AI tool</b>asks a question via the MCP server</div>
+    <div class="arrow">→</div>
+    <div class="node"><b>Relay daemon</b>localhost :__RELAY_PORT__, shared by every session</div>
+    <div class="arrow">→</div>
+    <div class="node"><b>This extension</b>runs the fetch in your OpenEvidence tab</div>
+    <div class="arrow">→</div>
+    <div class="node"><b>Answer</b>flows back to the AI tool</div>
+  </div>
+  <p class="muted">
+    Nothing navigates or pops up — the tab stays where it is. The extension only ever talks to
+    <code>openevidence.com</code> and your local relay.
+  </p>
+
+  <h2>Set it up (once)</h2>
+  <div class="card">
+    <ol class="steps">
+      <li><b>Keep this extension loaded</b> in one Chromium browser (Chrome, Edge, Brave, Arc, …).</li>
+      <li><b>Stay logged in to <a href="https://www.openevidence.com" target="_blank" rel="noopener">openevidence.com</a></b> in that browser, and keep a tab open. That login <i>is</i> your authentication — no API key, no cookie file.</li>
+      <li><b>Run your AI tool.</b> The openevidence-mcp server auto-starts the relay and connects to this extension. The badge above turns green.</li>
+    </ol>
+  </div>
+
+  <div class="callout">
+    <b>One tab, many sessions.</b> The relay runs as a shared background daemon, so you can run
+    OpenEvidence from any number of Claude/Codex sessions at the same time — they all flow through this
+    single logged-in tab. No per-session setup.
+  </div>
+
+  <h2>Privacy &amp; security</h2>
+  <ul class="tidy">
+    <li>The relay listens on <b>localhost only</b> (<code>127.0.0.1:__RELAY_PORT__</code>) — nothing is exposed to the network.</li>
+    <li>The extension stores <b>no credentials</b>. Your OpenEvidence session lives in your browser, as always.</li>
+    <li>It only acts on requests from your own local MCP server, and only against <code>openevidence.com</code>.</li>
+  </ul>
+
+  <h2>Troubleshooting</h2>
+  <ul class="tidy">
+    <li><b>Badge not green?</b> Make sure you’re logged in to openevidence.com in this browser and a tab is open, then reload the extension (<code>chrome://extensions</code> → ↻).</li>
+    <li><b>“Relay not reachable”?</b> Start your AI tool / MCP server so the relay daemon comes up, then click <i>Check connection</i> again.</li>
+    <li>Run the relay only in <b>one browser at a time</b> if you have it installed in several — requests go to whichever answers first.</li>
+  </ul>
+
+  <footer>
+    Companion for <a href="https://github.com/htlin222/openevidence-mcp" target="_blank" rel="noopener">openevidence-mcp</a>.
+    Localhost-only · open source.
+  </footer>
+</div>
+
+<script src="readme.js"></script>
+</body>
+</html>
