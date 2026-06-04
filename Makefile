@@ -30,7 +30,7 @@ build:
 	$(NPM) run build
 
 extension:
-	$(NPM) run build:extension
+	cd $(CURDIR)/extension && $(NPM) install && $(NPM) run build
 
 check:
 	$(NPM) run check

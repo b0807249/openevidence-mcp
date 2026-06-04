@@ -29,23 +29,25 @@ You won't see any navigation; the tab just sits on openevidence.com.
 
 ## Build
 
-Source lives in `extension/` (TypeScript); the loadable artifact is built to
-`dist/extension/`:
+This is a **standalone sub-project** with its own `package.json` — the root
+`openevidence-mcp` package stays MCP-only and carries none of the extension's
+build deps. Build the loadable artifact into `extension/dist/`:
 
 ```
-make extension          # or: npm run build:extension
+make extension          # from the repo root (runs npm install + build here)
+# or, inside extension/:
+npm install && npm run build
 ```
 
-This bundles `extension/src/background.ts` → `dist/extension/background.js` and
-copies the manifest. The relay port is baked in from `OE_MCP_RELAY_PORT`
-(default `8787`) — rebuild if you change it.
+`npm run check` typechecks the source. The relay port is baked in from
+`OE_MCP_RELAY_PORT` (default `8787`) — rebuild if you change it.
 
 ## Install (one time)
 
-1. Build it (above) so `dist/extension/` exists.
+1. Build it (above) so `extension/dist/` exists.
 2. Open `brave://extensions` (or `chrome://extensions`).
 3. Toggle **Developer mode** on (top right).
-4. Click **Load unpacked** and select the built **`dist/extension/`** folder.
+4. Click **Load unpacked** and select the built **`extension/dist/`** folder.
 5. Make sure you are **logged in to openevidence.com** in this same browser.
 
 That's it. The service worker auto-connects to the relay and re-connects on
