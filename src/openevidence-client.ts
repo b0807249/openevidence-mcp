@@ -117,21 +117,7 @@ export class OpenEvidenceClient {
   }
 
   async ask(payload: OpenEvidenceAskRequest): Promise<Record<string, unknown>> {
-    const body: Record<string, unknown> = {
-      article_type: payload.articleType ?? DEFAULT_ARTICLE_TYPE,
-      inputs: {
-        variant_configuration_file: payload.variantConfigurationFile ?? "prod",
-        attachments: [],
-        question: payload.question,
-        use_gatekeeper: true,
-      },
-      personalization_enabled: payload.personalizationEnabled ?? false,
-      disable_caching: payload.disableCaching ?? false,
-    };
-
-    if (payload.originalArticleId) {
-      body.original_article = payload.originalArticleId;
-    }
+    const body = buildAskBody(payload);
 
     return (await this.postJson("/api/article", body, payload.priority)) as Record<
       string,
@@ -250,6 +236,30 @@ export class OpenEvidenceClient {
       headers,
     });
   }
+}
+
+/**
+ * Build the `POST /api/article` request body. Shared by the Node client and the
+ * browser-extension relay so both submit a byte-identical ask.
+ */
+export function buildAskBody(payload: OpenEvidenceAskRequest): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    article_type: payload.articleType ?? DEFAULT_ARTICLE_TYPE,
+    inputs: {
+      variant_configuration_file: payload.variantConfigurationFile ?? "prod",
+      attachments: [],
+      question: payload.question,
+      use_gatekeeper: true,
+    },
+    personalization_enabled: payload.personalizationEnabled ?? false,
+    disable_caching: payload.disableCaching ?? false,
+  };
+
+  if (payload.originalArticleId) {
+    body.original_article = payload.originalArticleId;
+  }
+
+  return body;
 }
 
 export function buildOpenEvidenceHeaders(

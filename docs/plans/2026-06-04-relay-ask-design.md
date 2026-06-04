@@ -73,6 +73,30 @@ oe_ask {question}
                     diff /api/article/list ──► new id ──► waitForArticle ──► answer
 ```
 
+## Browser-extension relay (preferred quiet path)
+
+The open-url path works but opens/navigates a visible tab. The **extension relay**
+makes the same browser-issued POST with **no visible navigation** and recovers the
+article id deterministically.
+
+- `src/relay-server.ts` — an in-process, localhost-only HTTP relay (no `ws` dep).
+  The extension long-polls `GET /poll` (the held request both delivers the next
+  ask and keeps the MV3 service worker alive); `submitAsk(body)` resolves when the
+  extension `POST /result`s the new article id. Started eagerly on server boot;
+  `OE_MCP_RELAY=0` disables, `OE_MCP_RELAY_PORT` sets the port (default 8787).
+- `extension/` — MV3 extension for Brave/Chrome. The service worker keeps one
+  **pinned, background OpenEvidence tab tracked by tab id** (so it never collides
+  with an OE tab you opened yourself) and runs `POST /api/article` *inside* it via
+  `chrome.scripting` — page-context origin/cookies/TLS ⇒ DataDome passes — then
+  returns `data.id`. No per-ask navigation; the tab just sits on openevidence.com.
+- `oe_ask` fallback order on a DataDome 403: **extension relay (if connected)** →
+  open-url browser (`browserFallback`) → throw. `buildAskBody` (in
+  `openevidence-client.ts`) is shared so the relay submits a byte-identical body.
+
+Install: load `extension/` unpacked (Developer mode), stay logged in to OE. See
+`extension/README.md`. The full DataDome-bypass-via-extension is verified by you
+in the live browser; the relay plumbing is unit-tested headlessly.
+
 ## Tests / verification
 
 - `npm run check` + `npm run build` clean; `npm test` 57/57 pass.

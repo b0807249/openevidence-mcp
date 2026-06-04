@@ -9,10 +9,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { askViaBrowser, detectMacDefaultBrowserApp } from "./ask-browser.js";
+import { startRelayServer, type RelayServer } from "./relay-server.js";
 import { extractFigures, saveArticleArtifacts } from "./citations.js";
 import { ensureConfigDirs, resolveConfig } from "./config.js";
 import {
 	DataDomeChallengeError,
+	buildAskBody,
 	extractAnswerText,
 	OpenEvidenceClient,
 	resolveVisualTags,
@@ -27,6 +29,24 @@ import type { OpenEvidenceAskRequest } from "./types.js";
 
 const config = resolveConfig();
 ensureConfigDirs(config);
+
+let relayServerPromise: Promise<RelayServer | null> | null = null;
+function getRelay(): Promise<RelayServer | null> {
+	if (!config.relayEnabled) return Promise.resolve(null);
+	if (!relayServerPromise) {
+		relayServerPromise = startRelayServer({
+			port: config.relayPort,
+			logger: (m) => process.stderr.write(`[relay] ${m}\n`),
+		}).catch((err) => {
+			process.stderr.write(`[relay] failed to start: ${String(err)}\n`);
+			return null;
+		});
+	}
+	return relayServerPromise;
+}
+
+// Start the relay eagerly so the extension can connect as soon as the server is up.
+void getRelay();
 
 const server = new McpServer({
 	name: "openevidence-mcp",
@@ -210,7 +230,22 @@ server.registerTool(
 					// The ask submission (POST /api/article) is the one path DataDome
 					// blocks from Node. Re-issue it through the real logged-in browser,
 					// whose TLS fingerprint is unfakeable, instead of failing.
-					if (error instanceof DataDomeChallengeError && config.browserFallback) {
+					if (!(error instanceof DataDomeChallengeError)) {
+						throw error;
+					}
+					const relay = await getRelay();
+					if (relay && relay.isConnected()) {
+						process.stderr.write(
+							`[oe_ask] Node POST DataDome-blocked; routing via the Brave extension relay.\n`,
+						);
+						const submitted = await relay.submitAsk(buildAskBody(askPayload), {
+							timeoutMs,
+						});
+						articleId = submitted.articleId;
+						note =
+							"Node POST was DataDome-blocked; submitted via the Brave extension relay.";
+						article = await client.waitForArticle(articleId, { timeoutMs, intervalMs });
+					} else if (config.browserFallback) {
 						process.stderr.write(
 							`[oe_ask] Node POST DataDome-blocked; falling back to browser. ${error.message}\n`,
 						);
