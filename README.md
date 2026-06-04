@@ -1,59 +1,172 @@
-<h1 align="center">OpenEvidence MCP (Cookie Auth Fork)</h1>
+<h1 align="center">OpenEvidence MCP</h1>
 
 <p align="center">
-  Use OpenEvidence from Claude Code, Codex CLI, Antigravity CLI, Claude Desktop, Cursor, Cline, Continue, and any MCP-compatible client.
+  Query OpenEvidence from Claude Code, Codex CLI, Antigravity CLI, Claude Desktop, Cursor, Cline, Continue, and any MCP client —
+  authenticated through your own logged-in browser tab. No API key.
 </p>
 
 <p align="center">
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-2d72d9"></a>
   <a href="https://github.com/bakhtiersizhaev/openevidence-mcp"><img alt="Based on upstream" src="https://img.shields.io/badge/upstream-bakhtiersizhaev%2Fopenevidence--mcp-181717?logo=github"></a>
   <a href="https://modelcontextprotocol.io"><img alt="MCP" src="https://img.shields.io/badge/MCP-stdio-1d9a5a"></a>
-  <a href="https://www.npmjs.com/package/@modelcontextprotocol/sdk"><img alt="MCP SDK" src="https://img.shields.io/badge/MCP%20SDK-1.26.0-1d9a5a"></a>
   <a href="https://www.typescriptlang.org"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9.3-3178c6"></a>
   <img alt="Node" src="https://img.shields.io/badge/Node-%3E%3D20-339933?logo=node.js&logoColor=white">
-  <img alt="Auth" src="https://img.shields.io/badge/auth-cookies.json-4f46e5">
-  <img alt="No Playwright" src="https://img.shields.io/badge/no-Playwright-ef4444">
-  <img alt="Unofficial" src="https://img.shields.io/badge/OpenEvidence-unofficial-yellow">
+  <img alt="Auth" src="https://img.shields.io/badge/auth-your%20browser%20tab-E23C1F">
+  <img alt="DataDome-free" src="https://img.shields.io/badge/DataDome-bypassed-16a34a">
+  <img alt="Fire and forget" src="https://img.shields.io/badge/oe__ask-fire--and--forget-0ea5e9">
   <img alt="BibTeX" src="https://img.shields.io/badge/citations-BibTeX-0f766e">
   <img alt="Crossref" src="https://img.shields.io/badge/validation-Crossref-f97316">
-  <img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-ready-6b7280">
-  <img alt="Codex CLI" src="https://img.shields.io/badge/Codex%20CLI-ready-111827">
-  <img alt="Antigravity CLI" src="https://img.shields.io/badge/Antigravity%20CLI-ready-8b5cf6">
+  <img alt="Unofficial" src="https://img.shields.io/badge/OpenEvidence-unofficial-yellow">
 </p>
 
-## What It Does
+## What it does
 
-This is an unofficial OpenEvidence MCP server that reuses cookies exported from your own logged-in OpenEvidence browser session. It does not launch a browser, does not install Playwright, and does not need an official OpenEvidence API key.
+OpenEvidence protects its API with bot detection that blocks plain server requests. This project removes that problem: when your AI tool asks OpenEvidence a question, the request is run **inside your own logged-in OpenEvidence browser tab** — so it carries your genuine browser session and is never challenged.
 
-It is designed for local personal workflows where you already have lawful access to OpenEvidence. It does not bypass authentication, remove access controls, redistribute OpenEvidence content, or include OpenEvidence data in this repository.
+A small **Chromium browser extension** lends its session to a localhost relay; the MCP server speaks to that relay. The extension is a generic authenticated fetch proxy — all the OpenEvidence logic stays in the local server, and **your browser login is the only credential**. No API key, no cookie file, no Playwright, no headless browser.
 
-Tools:
+It is designed for local personal workflows where you already have lawful access to OpenEvidence. It does not bypass authentication, remove access controls, redistribute OpenEvidence content, or include any OpenEvidence data in this repository.
+
+## How it works
+
+```
+  Claude / Codex / any MCP client
+            │  asks a question (oe_ask)
+            ▼
+     openevidence-mcp  ──▶  relay daemon  ──▶  browser extension  ──▶  your logged-in
+       (stdio server)      127.0.0.1:8787       (runs the fetch)        OpenEvidence tab
+            ▲              shared · auto-spawned                              │
+            └──────────────────────── answer ◀───────────────────────────────┘
+```
+
+Nothing navigates or pops up — the tab stays where it is. The extension only ever talks to `openevidence.com` and your local relay (`127.0.0.1`). The relay runs as a **shared daemon** that owns port 8787 and outlives every session, so any number of Claude/Codex sessions funnel through the **one** logged-in tab.
+
+## Quick start
+
+```bash
+git clone https://github.com/htlin222/openevidence-mcp.git
+cd openevidence-mcp
+make all      # installs deps · builds the MCP server + relay extension ·
+              # registers the server into Claude and Codex (whichever CLI you have)
+```
+
+Then the one manual step `make all` prints (a browser action that can't be scripted):
+
+1. **Load the extension** — open `chrome://extensions` (Chrome / Edge / Brave / Arc / Vivaldi / Opera) → turn on **Developer mode** → **Load unpacked** → select `extension/dist`.
+2. **Stay logged in to [openevidence.com](https://www.openevidence.com)** in that browser, and keep a tab open. That login *is* your authentication.
+3. **Run your AI tool.** The server auto-starts the relay and connects to the extension.
+
+Verify and go:
+
+```bash
+curl -s http://127.0.0.1:8787/health     # expect {"ok":true,"connected":true,"version":1,...}
+```
+
+Then just ask, in any MCP client: *“Use OpenEvidence to answer …”*. Re-run `make all` anytime to rebuild + re-register; `make help` lists every target; `make kill-all` stops all servers + the relay daemon.
+
+> Clicking the extension's toolbar icon opens a built-in **how-it-works page** with a live connection check.
+
+> `cookies.json` and a HAR are **optional** — needed only for the legacy `OE_MCP_RELAY_TRANSPORT=off` cookie read path, the Python collections tooling, and `npm run doctor` / `login` / `smoke`. See [Optional cookie path](#optional-cookie-path).
+
+## One tab, many sessions
+
+The relay is a standalone daemon (auto-spawned; run/inspect with `npm run relay`) that owns port 8787 and is shared by every MCP server. You can run OpenEvidence from **any number of Claude/Codex sessions at once** — they all flow through the single logged-in tab. The daemon:
+
+- **outlives session restarts** and is respawned automatically if it dies (a crashed daemon is replaced and the in-flight request retried);
+- is **idempotent** — a second daemon that loses the port race exits cleanly;
+- reports `version` + `pid` on `/health`, so an upgrade replaces a stale daemon from an older build.
+
+## Asking questions
+
+After registration, ask your MCP client in plain English and mention OpenEvidence — the agent calls `oe_ask` automatically.
+
+```text
+Use OpenEvidence to answer: DLBCL frontline treatment landscape NCCN v3.2026. Include citations and BibTeX.
+Use OpenEvidence to compare Pola-R-CHP vs R-CHOP in untreated DLBCL. Include trial citations and BibTeX.
+Use OpenEvidence to review current evidence for SGLT2 inhibitors in HFpEF. Include citations and BibTeX.
+Use OpenEvidence to find guideline-supported anticoagulation options for cancer-associated thrombosis.
+```
+
+### Fire-and-forget by default
+
+`oe_ask` returns `{article_id, status:"pending"}` **the moment the question is submitted**, freeing the tab for other sessions instead of holding the call for the whole generation:
+
+```jsonc
+// oe_ask  →  returns instantly
+{ "article_id": "…", "status": "pending" }
+
+// oe_article_get(article_id)  →  the finished answer, when ready
+{ "article_id": "…", "status": "success", "extracted_answer_raw": "…", "figures": […], "artifacts": { … } }
+```
+
+- Fetch the answer later with **`oe_article_get(article_id)`** — pass `wait_for_completion: true` there to block until it's ready.
+- For one-shot blocking (submit and wait in a single call), pass `wait_for_completion: true` to **`oe_ask`** itself.
+
+A completed article returns the OpenEvidence payload and `status`, the `article_id`, the answer markdown as `extracted_answer_raw`, any figures, inline BibTeX as `artifacts.bibtex`, and saved citation files. Pass `include_bibtex: false` to keep the response small while still writing `citations.bib` to disk.
+
+## Tools
 
 | Tool                          | Purpose                                                                                                                     |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `oe_auth_status`              | Check `/api/auth/me` with your cookie file                                                                                  |
-| `oe_history_list`             | Read OpenEvidence history                                                                                                   |
-| `oe_article_get`              | Fetch an article by id and save artifacts                                                                                   |
-| `oe_ask`                      | Ask a question (requires the browser-extension relay), optionally wait, and save artifacts                                  |
+| `oe_ask`                      | Ask a question — fire-and-forget by default (returns a pending `article_id`); `wait_for_completion:true` to block            |
+| `oe_article_get`              | Fetch an article by id (the fetch-later half of `oe_ask`); saves artifacts; `wait_for_completion` to block until ready       |
+| `oe_auth_status`              | Check `/api/auth/me` through the relay                                                                                       |
+| `oe_history_list`             | Read your OpenEvidence question history                                                                                      |
 | `oe_collections_list`         | List your collections                                                                                                       |
-| `oe_collections_get`          | Get a collection (incl. nested questions[] = membership list)                                                               |
-| `oe_collections_create`       | Create a collection (agent-managed names should start with `#`)                                                             |
-| `oe_collections_add_article`  | Add a chat to a collection                                                                                                  |
-| `oe_collections_db_init`      | Create the local SQLite mirror (idempotent)                                                                                 |
-| `oe_collections_sync_history` | Pull /api/article/list into local SQLite chats table                                                                        |
-| `oe_collections_sync_db`      | Refresh collections + memberships into SQLite                                                                               |
-| `oe_collections_unsorted`     | Chats with no `#`-collection membership; structured JSON                                                                    |
-| `oe_collections_summary`      | Counts + last sync timestamps                                                                                               |
-| `oe_collections_classify`     | Auto-classify unsorted chats using log-odds-ratio signatures learned from your existing memberships + curated keyword rules |
-| `oe_collections_bulk_apply`   | Mint missing `#`-collections + add memberships per `[{article_id, hashtags}]` plan                                          |
+| `oe_collections_get`          | Get a collection (incl. nested `questions[]` = membership list)                                                              |
+| `oe_collections_create`       | Create a collection (agent-managed names should start with `#`)                                                              |
+| `oe_collections_add_article`  | Add a chat to a collection                                                                                                   |
+| `oe_collections_db_init`      | Create the local SQLite mirror (idempotent)                                                                                  |
+| `oe_collections_sync_history` | Pull `/api/article/list` into the local SQLite chats table                                                                   |
+| `oe_collections_sync_db`      | Refresh collections + memberships into SQLite                                                                                |
+| `oe_collections_unsorted`     | Chats with no `#`-collection membership; structured JSON                                                                     |
+| `oe_collections_summary`      | Counts + last sync timestamps                                                                                                |
+| `oe_collections_classify`     | Auto-classify unsorted chats using log-odds-ratio signatures learned from your memberships + curated keyword rules           |
+| `oe_collections_bulk_apply`   | Mint missing `#`-collections + add memberships per `[{article_id, hashtags}]` plan                                           |
 
-`oe_ask` and `oe_article_get` return BibTeX in the MCP response by default when artifacts are saved. Pass `include_bibtex: false` to keep the response smaller while still writing `citations.bib` to disk.
+## Privacy & security
 
-### Collections sync & auto-sort routine
+- The relay listens on **localhost only** (`127.0.0.1:8787`) — nothing is exposed to the network.
+- The extension and server store **no credentials**. Your OpenEvidence session lives in your browser, as always.
+- The extension only acts on requests from your own local relay, and only against `openevidence.com`.
+- This repository contains **connector code only** — no OpenEvidence content, datasets, cookies, or account material.
 
-`scripts/collection_sort.py` mirrors your chat history and collection memberships into a local SQLite (`~/.openevidence-mcp/db/oe.sqlite` by default; override with `OE_MCP_DB_PATH`). The companion routine `routines/collection-sort.md` walks an MCP client through syncing, surfacing unsorted chats, and applying multi-membership hashtag tags. The convention: collections whose name starts with `#` are agent-managed; collections without a leading hash are human-curated and the routine never touches them.
+## Troubleshooting
 
-The same pipeline is exposed as MCP tools (`oe_collections_db_init`, `oe_collections_sync_history`, `oe_collections_sync_db`, `oe_collections_unsorted`, `oe_collections_summary`, `oe_collections_bulk_apply`) — the TS server shells out to `scripts/collection_sort.py` via `python3` (override with `OE_MCP_PYTHON`) so the DataDome-safe HTTP path stays canonical.
+- **Extension badge not green / `connected:false`?** Make sure you're logged in to openevidence.com in that browser with a tab open, then reload the extension (`chrome://extensions` → ↻).
+- **Tools fail with “relay not connected”?** Start your AI tool / MCP server so the daemon comes up, then `curl -s http://127.0.0.1:8787/health`. If a previous build is stuck, `make kill-all` and reconnect the MCP server.
+- **Run the relay in one browser at a time** if you've loaded the extension in several — requests go to whichever polls first.
+- **DataDome 403 on the legacy cookie path?** See [Doctor](#doctor-legacy-cookie-path) below — relevant only when `OE_MCP_RELAY_TRANSPORT=off`.
+
+## Register with MCP clients
+
+`make all` already registers Claude Code and Codex CLI. To do it à la carte (or for other clients), register the local stdio server `node /ABSOLUTE/PATH/openevidence-mcp/dist/server.js`. **No env is required** — the browser extension is the login.
+
+```bash
+make install-claude-global    # claude mcp add-json --scope user openevidence …
+make install-codex-global     # codex mcp add openevidence -- node dist/server.js
+make install-agy-global       # Antigravity CLI (agy-cli)
+make install-all              # all three
+```
+
+For **Claude Desktop, Cursor, Cline, Continue**, use this `mcpServers` shape (see [`examples/`](examples/) for a full-knobs reference):
+
+```json
+{
+  "mcpServers": {
+    "openevidence": {
+      "command": "node",
+      "args": ["/ABSOLUTE/PATH/openevidence-mcp/dist/server.js"]
+    }
+  }
+}
+```
+
+## Collections sync & auto-sort
+
+`scripts/collection_sort.py` mirrors your chat history and collection memberships into a local SQLite (`~/.openevidence-mcp/db/oe.sqlite`; override with `OE_MCP_DB_PATH`). The routine [`routines/collection-sort.md`](routines/collection-sort.md) walks an MCP client through syncing, surfacing unsorted chats, and applying multi-membership hashtag tags. Convention: collections whose name starts with `#` are **agent-managed**; collections without a leading hash are human-curated and never touched.
+
+The same pipeline is exposed as the `oe_collections_*` MCP tools (the TS server shells out to `scripts/collection_sort.py` via `python3`, overridable with `OE_MCP_PYTHON`).
 
 ```bash
 python scripts/collection_sort.py init
@@ -63,22 +176,20 @@ python scripts/collection_sort.py list-unsorted --json  # routine reads this
 python scripts/collection_sort.py summary
 ```
 
-**Account-scoped (schema v2).** Chats, collections, and memberships carry an `account` column (composite primary keys), so one DB can mirror multiple OpenEvidence logins without mixing them. The account is resolved from `/api/auth/me` (the cookie's account); override with `--account EMAIL`. Sync/write commands always use the live account; offline reads (`list-unsorted`, `summary`) fall back to the sole account in the DB, then to a live lookup. An existing v1 DB auto-migrates on first open — pre-v2 rows are tagged `--legacy-account` (default `legacy`; or `OE_MCP_LEGACY_ACCOUNT`). `summary` reports the active `account` and `known_accounts`.
+**Account-scoped (schema v2).** Chats, collections, and memberships carry an `account` column (composite primary keys), so one DB can mirror multiple OpenEvidence logins without mixing them. The account is resolved from `/api/auth/me`; override with `--account EMAIL`. A v1 DB auto-migrates on first open — pre-v2 rows are tagged `--legacy-account` (default `legacy`; or `OE_MCP_LEGACY_ACCOUNT`).
 
-#### Schedule the sync (macOS)
+### Schedule the sync (macOS)
 
-The classification step needs the agent in the loop, but the sync side is pure I/O — install a daily launchd job that keeps the local SQLite mirror fresh so the next agent run has zero lag:
+The classification step needs the agent in the loop, but the sync side is pure I/O — install a daily launchd job that keeps the local mirror fresh:
 
 ```bash
-bash scripts/install_launchd.sh                  # daily 02:00 (override via OE_MCP_SYNC_HOUR / OE_MCP_SYNC_MINUTE)
-launchctl start com.htlin.openevidence-mcp.sync  # fire once now to verify
+bash scripts/install_launchd.sh                  # daily 02:00 (OE_MCP_SYNC_HOUR / OE_MCP_SYNC_MINUTE)
+launchctl start com.htlin.openevidence-mcp.sync  # fire once to verify
 tail -30 ~/.openevidence-mcp/logs/sync.log
 bash scripts/install_launchd.sh --uninstall      # remove
 ```
 
-The wrapper (`scripts/collection_sync_cron.sh`) appends one block per run to `~/.openevidence-mcp/logs/sync.log` containing the sync-history / sync-collections / summary output. Override the log dir with `OE_MCP_LOG_DIR`.
-
-The wrapper takes an optional mode flag:
+The wrapper (`scripts/collection_sync_cron.sh`) appends one block per run to `~/.openevidence-mcp/logs/sync.log`. It takes an optional mode flag:
 
 | Mode        | Behavior                                                             |
 | ----------- | -------------------------------------------------------------------- |
@@ -86,197 +197,37 @@ The wrapper takes an optional mode flag:
 | `--dry-run` | sync + classify; writes `proposed-plan.json` for review, no apply    |
 | `--auto`    | sync + classify + bulk-apply + reconcile; fully autonomous sort      |
 
-`scripts/classify.py` runs offline, no API. It builds a per-tag log-odds-ratio signature (Monroe et al. 2008) from your existing memberships every run, OR'd with curated keyword rules. Validate quality on your data with `python scripts/classify.py validate` (held-out cross-validation; on the first 603 memberships I verified, hit-rate = 99.4% with recall ≈1.0; precision varies by tag — raise `--threshold` for tighter precision in `--auto` mode). Tune for headless use via `OE_MCP_AUTO_THRESHOLD` (default 12) and `OE_MCP_AUTO_TOP_K` (default 3). Switch the launchd job to autonomous mode with `OE_MCP_SYNC_MODE=--auto bash scripts/install_launchd.sh`.
+`scripts/classify.py` runs offline (no API): a per-tag log-odds-ratio signature (Monroe et al. 2008) built from your memberships every run, OR'd with curated keyword rules. Validate with `python scripts/classify.py validate`. Tune headless use via `OE_MCP_AUTO_THRESHOLD` (default 12) and `OE_MCP_AUTO_TOP_K` (default 3); switch the job to autonomous mode with `OE_MCP_SYNC_MODE=--auto bash scripts/install_launchd.sh`.
 
-Saved artifacts:
+## Citation artifacts
+
+Completed `oe_ask` / `oe_article_get` calls save artifacts under `${OE_MCP_ARTIFACT_DIR}/<article_id>/` (default OS temp dir + `openevidence-mcp`; on macOS, `/tmp` may resolve under `/var/folders/.../T/`):
 
 | File                       | Purpose                              |
 | -------------------------- | ------------------------------------ |
-| `article.json`             | Full OpenEvidence article payload    |
 | `answer.md`                | Extracted markdown answer            |
+| `article.json`             | Full OpenEvidence article payload    |
 | `citations.json`           | Parsed structured citations          |
 | `citations.bib`            | BibTeX bibliography                  |
 | `crossref-validation.json` | Post-hoc Crossref validation results |
 
-## Fast Install
+Crossref validation: DOI citations are validated directly; non-DOI citations use a bibliographic query and are marked `candidate` / `not_found` / `error`. Low-similarity matches never overwrite BibTeX metadata, and sources like NCCN guidelines may stay as local OpenEvidence metadata when Crossref has no authoritative match.
 
-### Quickest path — extension only (recommended)
+## Optional cookie path
 
-No cookies, no HAR. The browser extension *is* the login — one command builds and registers everything:
-
-```bash
-git clone https://github.com/htlin222/openevidence-mcp.git
-cd openevidence-mcp
-make all      # installs deps · builds the MCP server + relay extension ·
-              # registers the server into Claude and Codex (whichever CLI you have)
-```
-
-Then the one manual step `make all` prints (a browser action that can't be scripted): **load the extension** — open `chrome://extensions` (Chrome / Edge / Brave / Arc …) → turn on **Developer mode** → **Load unpacked** → select `extension/dist`, and stay logged in to **openevidence.com** in that browser.
-
-Verify and go:
-
-```bash
-curl -s http://127.0.0.1:8787/health     # expect "connected":true
-```
-
-That's it — ask from any number of Claude/Codex sessions at once (they share the one tab via the relay daemon). Re-run `make all` anytime to rebuild + re-register.
-
-> `cookies.json` and a HAR are **optional** — needed only for the legacy `OE_MCP_RELAY_TRANSPORT=off` cookie read path, the Python collections tooling, and `npm run doctor` / `login` / `smoke`. If you only want to ask questions, skip the rest of this section.
-
-### Cookie-path setup (optional)
-
-You need two private browser exports from the same logged-in OpenEvidence browser session:
-
-| File                       | Purpose                                                | Where to put it                        |
-| -------------------------- | ------------------------------------------------------ | -------------------------------------- |
-| `cookies.json`             | Authenticates your OpenEvidence account session        | `./cookies.json`                       |
-| `www.openevidence.com.har` | Teaches the client the browser fingerprint that worked | Any private path; pass it as `HAR=...` |
-
-Both files are credentials. Keep them local, do not commit them, and do not share them. The HAR extractor only saves the browser signature headers into `openevidence-fingerprint.json`; it does not copy cookies or authorization headers from the HAR.
-
-```bash
-git clone https://github.com/htlin222/openevidence-mcp.git
-cd openevidence-mcp
-npm install
-```
-
-Export cookies from a logged-in `https://www.openevidence.com` browser session and put them here:
+The extension relay is the default and recommended path. For headless reads without the extension, set `OE_MCP_RELAY_TRANSPORT=off` to route reads (`oe_history_list`, `oe_article_get`, `oe_collections_*`) over a browser-exported `cookies.json` — asks still need the extension. This path also backs the Python collections tooling and the `npm run doctor` / `login` / `smoke` CLIs.
 
 ```bash
 cp /path/to/browser-cookies.json ./cookies.json
+make build HAR=/path/to/www.openevidence.com.har   # extracts the browser fingerprint, then compiles
+npm run login && npm run smoke
 ```
 
-Export a HAR that contains a successful OpenEvidence ask request (`POST /api/article`, usually status `201`), then build:
+`make build` extracts `openevidence-fingerprint.json` from the HAR when present. The fingerprint is **profile-faithful** — the client sends exactly the captured browser's header set, so a HAR from any browser (incl. Safari) stays coherent with the cookie that browser minted.
 
-```bash
-make build HAR=/path/to/www.openevidence.com.har
-npm run login
-npm run smoke
-```
+### Doctor (legacy cookie path)
 
-> ⚠️ **The MCP server runs entirely through the browser extension by default.** `oe_ask` **and all reads** (`oe_history_list`, `oe_article_get`, `oe_collections_*`) are issued inside your own logged-in tab via a small Brave/Chrome relay extension — set it up **before using any tool**: see the **Browser extension relay** section below and [`extension/README.md`](extension/README.md). Set `OE_MCP_RELAY_TRANSPORT=off` to fall back to the legacy `cookies.json` read path (asks still need the extension). The cookie path also still backs the Python collections tooling and the `npm run doctor` / `npm run smoke` / `npm run login` CLIs (those validate auth + reads over cookies directly).
-
-`make build` extracts `openevidence-fingerprint.json` from the HAR when the HAR exists, then compiles `dist/server.js`. The cookie file can be a browser-exported cookies array or a storage-state object with a `cookies` array.
-
-The fingerprint is **profile-faithful**: the client sends exactly the captured browser's header set — no backfill from a built-in default. So a HAR from any browser works, and the headers stay coherent with the cookie that browser minted. A **Safari** HAR, for example, correctly sends Safari's `User-Agent` and `Sec-Fetch-*` and **omits** the Chromium-only `sec-ch-ua*` client hints (which Safari does not send); a Chrome/Brave HAR includes them. Match the fingerprint browser to the browser that exported `cookies.json` for the most coherent request. (The `make build` step still warns when a HAR lacks `sec-ch-ua*` — that warning is expected and harmless for Safari.)
-
-For a private battery-included portable skill, also copy the same cookie file into the skill folder:
-
-```bash
-cp ./cookies.json ./openevidence-skill/cookies.json
-```
-
-That lets `openevidence-skill/scripts/oe.py` run standalone without MCP config. This is local-only; `openevidence-skill/cookies.json` is gitignored and should never be published in a public skill bundle.
-
-## Register With MCP Clients
-
-Use one of these.
-
-### Claude Code
-
-```bash
-make install-claude-global HAR=/path/to/www.openevidence.com.har
-claude mcp get openevidence
-```
-
-What it registers:
-
-```text
-node /ABSOLUTE/PATH/openevidence-mcp/dist/server.js
-OE_MCP_COOKIES_PATH=/ABSOLUTE/PATH/openevidence-mcp/cookies.json
-```
-
-### Codex CLI
-
-```bash
-make install-codex-global HAR=/path/to/www.openevidence.com.har
-codex mcp get openevidence
-```
-
-Equivalent manual command:
-
-```bash
-codex mcp add openevidence \
-  --env OE_MCP_COOKIES_PATH="$PWD/cookies.json" \
-  -- node "$PWD/dist/server.js"
-```
-
-Manual `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.openevidence]
-command = "node"
-args = ["/ABSOLUTE/PATH/openevidence-mcp/dist/server.js"]
-startup_timeout_sec = 60
-
-[mcp_servers.openevidence.env]
-OE_MCP_COOKIES_PATH = "/ABSOLUTE/PATH/openevidence-mcp/cookies.json"
-```
-
-### Antigravity CLI (agy-cli)
-
-```bash
-make install-agy-global HAR=/path/to/www.openevidence.com.har
-agy-cli mcp list
-```
-
-Equivalent manual command:
-
-```bash
-agy-cli mcp add --scope user \
-  -e OE_MCP_COOKIES_PATH="$PWD/cookies.json" \
-  openevidence node "$PWD/dist/server.js"
-```
-
-### Claude Desktop, Cursor, Cline, Continue
-
-Use this `mcpServers` shape:
-
-```json
-{
-  "mcpServers": {
-    "openevidence": {
-      "command": "node",
-      "args": ["/ABSOLUTE/PATH/openevidence-mcp/dist/server.js"],
-      "env": {
-        "OE_MCP_COOKIES_PATH": "/ABSOLUTE/PATH/openevidence-mcp/cookies.json"
-      }
-    }
-  }
-}
-```
-
-### Install Everywhere
-
-```bash
-make install-all HAR=/path/to/www.openevidence.com.har
-```
-
-This registers the same local stdio server with Claude Code, Codex CLI, and Antigravity CLI.
-
-## Verify
-
-```bash
-npm run check
-npm test
-npm run build
-npm run smoke
-```
-
-Expected smoke result:
-
-```json
-{
-  "ok": true,
-  "authenticated": true
-}
-```
-
-MCP stdio servers normally start on demand when the client checks or uses them. They do not need to run as a separate daemon.
-
-### Doctor (stale DataDome cookie check)
-
-If requests start failing with a DataDome 403 — most often **after moving to a different computer** — run the doctor:
+When the cookie path fails with a DataDome 403 — most often **after moving to a different computer** — run the doctor:
 
 ```bash
 npm run doctor              # static checks + a live read probe
@@ -284,119 +235,58 @@ npm run doctor -- --offline # static checks only (no network)
 npm run doctor -- --json    # machine-readable output
 ```
 
-It flags the common ways the `datadome` cookie goes stale:
+It flags `datadome-missing` / `-expired` / `-session` (cookie absent / past expiry / session-scoped), `fingerprint-platform-mismatch` (cookie + fingerprint minted on a different OS — re-mint here), `fingerprint-default` (no fingerprint; built-in signature in use), and `datadome-live` (a live request was actually challenged). Non-zero exit on failure for CI/pre-flight.
 
-- **`datadome-missing` / `datadome-expired` / `datadome-session`** — the cookie is absent, past its expiry, or session-scoped.
-- **`fingerprint-platform-mismatch` (FAIL)** — the cookie + `openevidence-fingerprint.json` were minted on a different OS than the host. DataDome binds its token to the (UA + client-hints + IP + TLS) signature, so it will be re-challenged here. **Re-mint on this machine:** browser login → export `cookies.json` + HAR → `make build HAR=…`.
-- **`fingerprint-default` (WARN)** — no `openevidence-fingerprint.json`; the built-in macOS/arm signature is in use.
-- **`datadome-live` (FAIL)** — a live request was actually challenged (definitive staleness). Exit code is non-zero when any check fails, so it works in CI/pre-flight.
+## Make targets
 
-### Browser extension relay (required — the MCP server runs through it, invisible, no 403)
+Run `make help` for the grouped, always-current list.
 
-A small companion **Chromium extension** — works in Chrome, Edge, Brave, Arc, Vivaldi, Opera — removes the DataDome problem entirely: the MCP server submits the ask `POST` **inside your real logged-in tab** (genuine origin/cookies/TLS), with **no visible navigation**. It's a generic authenticated fetch proxy — all logic stays in Node; the extension just lends its browser session over a localhost relay. The call is handled by **whichever browser has the extension installed and is logged into OpenEvidence**, so install it in the browser you use for OpenEvidence (and run it in one browser at a time).
+| Target                                              | Purpose                                                                                                                     |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `make all` (or bare `make`)                         | **One-shot setup:** deps + build server + build extension + register into Claude & Codex (skips a CLI that isn't installed)  |
+| `make help`                                         | Grouped reference of every target                                                                                           |
+| `make kill-all`                                     | Stop all MCP servers + the relay daemon and free port 8787                                                                  |
+| `make relay`                                        | Run the standalone relay daemon in the foreground (debug)                                                                   |
+| `make deps` / `check` / `test` / `smoke`            | Force install · type-check · unit tests · auth+history smoke (cookie path)                                                  |
+| `make build [HAR=…]`                                | Extract the fingerprint if a HAR is given, then compile TypeScript                                                          |
+| `make fingerprint HAR=…`                            | Extract the working browser fingerprint from a HAR                                                                          |
+| `make import-cookies COOKIES=…`                     | Import and verify cookies                                                                                                   |
+| `make install-claude-global` / `-codex-global` / `-agy-global` / `install-all` | Register the server with the respective CLI(s)                                                  |
 
-Install (one time):
+## Environment variables
 
-1. Download from the [**extension release**](https://github.com/htlin222/openevidence-mcp/releases/tag/extension-v0.1.0) — grab the `…-relay-extension-*.zip` and unzip (or build from source: `cd extension && npm install && npm run build`).
-2. Open your browser's extensions page (`chrome://extensions`, `edge://extensions`, `brave://extensions`, …) → **Developer mode** → **Load unpacked** → select the unzipped (or `extension/dist/`) folder.
-3. Stay **logged in to openevidence.com** in that browser, then run the MCP server — it auto-connects.
+| Variable                   | Default                                                                   | Purpose                                           |
+| -------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
+| `OE_MCP_RELAY`             | `1`                                                                       | Set `0` to disable the relay entirely             |
+| `OE_MCP_RELAY_TRANSPORT`   | `all`                                                                     | `all` = every request via the extension; `off` = reads over `cookies.json` |
+| `OE_MCP_RELAY_PORT`        | `8787`                                                                     | Relay port (must match the extension)             |
+| `OE_MCP_RELAY_PID_PATH`    | `~/.openevidence-mcp/relay.pid`                                           | Relay daemon pidfile                              |
+| `OE_MCP_RELAY_LOG_PATH`    | `~/.openevidence-mcp/relay.log`                                           | Relay daemon log file                             |
+| `OE_MCP_BASE_URL`          | `https://www.openevidence.com`                                            | OpenEvidence base URL                             |
+| `OE_MCP_ARTIFACT_DIR`      | OS temp dir + `openevidence-mcp`                                          | Artifact output directory                         |
+| `OE_MCP_CROSSREF_MAILTO`   | unset                                                                     | Optional Crossref polite-pool email               |
+| `OE_MCP_CROSSREF_VALIDATE` | `1`                                                                       | Set `0` to skip Crossref validation               |
+| `OE_MCP_POLL_INTERVAL_MS`  | `1200`                                                                    | Poll interval when waiting for an answer          |
+| `OE_MCP_POLL_TIMEOUT_MS`   | `180000`                                                                  | Default poll timeout                              |
+| `OE_MCP_COOKIES_PATH`      | `./cookies.json` if present, else `~/.openevidence-mcp/auth/cookies.json` | Cookie file (legacy/optional path)                |
+| `OE_MCP_FINGERPRINT_PATH`  | `./openevidence-fingerprint.json` if present                              | Browser signature fingerprint (legacy path)       |
+| `OE_MCP_DB_PATH`           | `~/.openevidence-mcp/db/oe.sqlite`                                        | Local SQLite mirror used by the collections tools |
+| `OE_MCP_PYTHON`            | `python3`                                                                 | Python interpreter the bridge tools spawn         |
+| `OE_MCP_LEGACY_ACCOUNT`    | `legacy`                                                                  | Label for pre-v2 rows on DB account migration     |
 
-By default (`OE_MCP_RELAY_TRANSPORT=all`) **every** MCP request — `oe_ask` and all reads — runs through the extension's session, and the server will not fall back to `cookies.json`; if the extension isn't connected, tools fail fast with install guidance. `cookies.json` is then used only by the Python collections tooling and `npm run doctor` / `login`. Set `OE_MCP_RELAY_TRANSPORT=off` to route reads over `cookies.json` instead (asks still go through the extension). Check the link: `curl http://127.0.0.1:8787/health`. Full docs: [`extension/`](extension/README.md).
+## Project files
 
-> The release also ships a signed `.crx`; note Chromium browsers block `.crx` files loaded from outside the Web Store, so **Load unpacked from the zip** is the normal install. The `.crx` is for enterprise-policy / reference use.
+- [extension/README.md](extension/README.md) — the browser-extension relay (and its built-in [README.html](extension/README.html) how-it-works page)
+- [README.AI.md](README.AI.md) — agent install playbook
+- [src/server.ts](src/server.ts) — MCP tools
+- [src/relay-server.ts](src/relay-server.ts) — the localhost relay (extension-facing + `/relay` bridge)
+- [src/relay-client.ts](src/relay-client.ts) / [src/relay-daemon.ts](src/relay-daemon.ts) — shared-daemon client + standalone daemon
+- [src/citations.ts](src/citations.ts) — citation extraction, BibTeX, Crossref validation
+- [src/doctor.ts](src/doctor.ts) — stale DataDome cookie diagnostics (legacy path)
+- [docs/plans/2026-06-04-shared-relay-daemon-design.md](docs/plans/2026-06-04-shared-relay-daemon-design.md) — relay daemon design doc
+- [examples/](examples/) — MCP client config samples
 
-**One tab, many sessions.** The relay runs as a standalone daemon (auto-spawned, see `npm run relay`) that owns port 8787 and is shared by every MCP server, so you can run OpenEvidence from any number of Claude sessions concurrently — they all funnel through the single logged-in tab. The daemon outlives session restarts and is respawned automatically if it dies; on an upgrade a stale daemon from an older build is detected (`/health` reports `version`) and replaced.
-
-## How To Ask Questions
-
-After registration, ask your MCP client in plain English and mention OpenEvidence. The agent should call `oe_ask` automatically.
-
-Example prompts:
-
-```text
-Use OpenEvidence to answer: DLBCL frontline treatment landscape NCCN v3.2026. Include citations and BibTeX.
-```
-
-```text
-Use OpenEvidence to compare Pola-R-CHP vs R-CHOP in untreated DLBCL. Include trial citations and BibTeX.
-```
-
-```text
-Use OpenEvidence to review current evidence for SGLT2 inhibitors in HFpEF. Include citations and BibTeX.
-```
-
-```text
-Use OpenEvidence to find guideline-supported anticoagulation options for cancer-associated thrombosis.
-```
-
-The underlying MCP call looks like this:
-
-```json
-{
-  "tool": "oe_ask",
-  "arguments": {
-    "question": "DLBCL frontline treatment landscape NCCN v3.2026",
-    "include_bibtex": true
-  }
-}
-```
-
-**`oe_ask` is fire-and-forget by default:** it returns `{article_id, status:"pending"}` the moment the question is submitted, freeing the browser tab for other sessions. Fetch the finished answer with `oe_article_get(article_id)` — pass `wait_for_completion: true` there to block until it is ready. For the old one-shot behavior (submit and wait in a single call), pass `"wait_for_completion": true` to `oe_ask` itself.
-
-The completed article (via `oe_article_get`, or `oe_ask` with `wait_for_completion:true`) returns:
-
-- the OpenEvidence article payload and `status`
-- `article_id`
-- extracted answer markdown as `extracted_answer_raw`
-- artifact file paths
-- inline BibTeX as `artifacts.bibtex`
-- saved citation files under the artifact directory
-
-To fetch BibTeX for a prior answer, ask:
-
-```text
-Use OpenEvidence to fetch article <ARTICLE_ID> and show the BibTeX.
-```
-
-That maps to `oe_article_get`:
-
-```json
-{
-  "article_id": "<ARTICLE_ID>",
-  "include_bibtex": true
-}
-```
-
-If the response is too large, use `include_bibtex: false`; the server will still write `citations.bib` to disk.
-
-## Citation Artifacts
-
-Completed `oe_ask` and `oe_article_get` calls save artifacts under:
-
-```text
-/tmp/openevidence-mcp/<article_id>/
-```
-
-On macOS, Node may resolve `/tmp` to a path under `/var/folders/.../T/`.
-
-Example output:
-
-```text
-answer.md
-article.json
-citations.json
-citations.bib
-crossref-validation.json
-```
-
-Crossref validation behavior:
-
-- DOI citations are validated directly with Crossref.
-- Non-DOI citations use a bibliographic query and are marked as `candidate`, `not_found`, or `error`.
-- Low-similarity Crossref matches are not used to overwrite BibTeX metadata.
-- Sources like NCCN guidelines may stay as local OpenEvidence metadata because Crossref often has no authoritative match.
-
-## Copyright, Trademark, And Medical Disclaimer
+## Copyright, trademark, and medical disclaimer
 
 This project is unofficial and independent. It is not affiliated with, endorsed by, sponsored by, or approved by OpenEvidence or its owners. "OpenEvidence" and related names, logos, product names, and content remain the property of their respective owners.
 
@@ -406,70 +296,7 @@ You are responsible for complying with OpenEvidence terms, institutional policie
 
 This software is not medical advice and is not a medical device. It is an integration tool for an MCP client. Clinicians and qualified users remain responsible for verifying outputs against authoritative sources and applying independent clinical judgment.
 
-## Cookie Refresh
-
-If auth stops working:
-
-```bash
-cp /path/to/fresh-browser-cookies.json ./cookies.json
-npm run login
-```
-
-Then restart or open a fresh MCP client session if the old stdio server process is still alive.
-
-## Make Targets
-
-Run `make help` for a grouped, always-current list.
-
-| Target                                              | Purpose                                                               |
-| --------------------------------------------------- | --------------------------------------------------------------------- |
-| `make all` (or bare `make`)                         | **One-shot setup:** deps + build server + build extension + register into Claude & Codex (skips a CLI that isn't installed) |
-| `make help`                                         | Grouped reference of every target                                     |
-| `make kill-all`                                     | Stop all MCP servers + the relay daemon and free port 8787            |
-| `make deps`                                         | Force a fresh `npm install`                                           |
-| `make build HAR=/path/to/file.har`                  | Extract fingerprint if the HAR exists, then compile TypeScript        |
-| `make check`                                        | Type-check                                                            |
-| `make test`                                         | Run unit tests                                                        |
-| `make smoke`                                        | Validate auth and history access                                      |
-| `make fingerprint HAR=/path/to/file.har`            | Extract the working browser fingerprint from a HAR                    |
-| `make import-cookies COOKIES=/path/to/cookies.json` | Import and verify cookies                                             |
-| `make install-claude-global HAR=/path/to/file.har`  | Build, then register with Claude Code user config                     |
-| `make install-codex-global HAR=/path/to/file.har`   | Build, then register with Codex CLI                                   |
-| `make install-agy-global HAR=/path/to/file.har`     | Build, then register with Antigravity CLI user config                 |
-| `make install-all HAR=/path/to/file.har`            | Build, then register with Claude Code, Codex CLI, and Antigravity CLI |
-
-## Environment Variables
-
-| Variable                   | Default                                                                   | Purpose                                           |
-| -------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
-| `OE_MCP_BASE_URL`          | `https://www.openevidence.com`                                            | OpenEvidence base URL                             |
-| `OE_MCP_ROOT_DIR`          | `~/.openevidence-mcp`                                                     | Root for default auth paths                       |
-| `OE_MCP_COOKIES_PATH`      | `./cookies.json` if present, else `~/.openevidence-mcp/auth/cookies.json` | Cookie file                                       |
-| `OE_MCP_AUTH_STATE_PATH`   | unset                                                                     | Legacy alias for `OE_MCP_COOKIES_PATH`            |
-| `OE_MCP_FINGERPRINT_PATH`  | `./openevidence-fingerprint.json` if present                              | Browser signature header fingerprint              |
-| `OE_MCP_ARTIFACT_DIR`      | OS temp dir + `openevidence-mcp`                                          | Artifact output directory                         |
-| `OE_MCP_CROSSREF_MAILTO`   | unset                                                                     | Optional Crossref polite-pool email               |
-| `OE_MCP_CROSSREF_VALIDATE` | `1`                                                                       | Set `0` to skip Crossref validation               |
-| `OE_MCP_POLL_INTERVAL_MS`  | `1200`                                                                    | Poll interval for `oe_ask`                        |
-| `OE_MCP_POLL_TIMEOUT_MS`   | `180000`                                                                  | Default poll timeout                              |
-| `OE_MCP_DB_PATH`           | `~/.openevidence-mcp/db/oe.sqlite`                                        | Local SQLite mirror used by the collections tools |
-| `OE_MCP_PYTHON`            | `python3`                                                                 | Python interpreter the bridge tools spawn         |
-| `OE_MCP_LEGACY_ACCOUNT`    | `legacy`                                                                  | Label for pre-v2 rows on DB account migration     |
-
-## Project Files
-
-- [README.AI.md](README.AI.md) - agent install playbook
-- [examples/codex-config.toml](examples/codex-config.toml) - Codex MCP config
-- [examples/claude-desktop-config.json](examples/claude-desktop-config.json) - JSON MCP config
-- [src/citations.ts](src/citations.ts) - citation extraction, BibTeX, Crossref validation
-- [src/cookies.ts](src/cookies.ts) - cookie file parsing
-- [src/server.ts](src/server.ts) - MCP tools
-- [src/relay-server.ts](src/relay-server.ts) - localhost relay the browser extension connects to
-- [src/doctor.ts](src/doctor.ts) - stale DataDome cookie diagnostics
-- [extension/README.md](extension/README.md) - browser-extension relay (required for `oe_ask`)
-- [test/citations.test.ts](test/citations.test.ts) - unit tests
-
-## License And Attribution
+## License and attribution
 
 Apache-2.0. Keep [LICENSE](LICENSE) and [NOTICE](NOTICE) when redistributing.
 

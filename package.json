@@ -1,7 +1,7 @@
 {
 	"name": "openevidence-mcp",
 	"version": "0.3.0",
-	"description": "Open-source MCP server for OpenEvidence clinical platform. Cookie-file auth, no API key required.",
+	"description": "Unofficial MCP server for OpenEvidence — authenticated through your own logged-in browser tab via a Chromium relay extension (no API key, no Playwright). Fire-and-forget asks, a shared relay daemon for concurrent sessions, BibTeX + Crossref citations.",
 	"main": "dist/server.js",
 	"bin": {
 		"openevidence-mcp": "./dist/server.js"
