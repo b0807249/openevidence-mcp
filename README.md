@@ -268,17 +268,17 @@ It flags the common ways the `datadome` cookie goes stale:
 
 ### Browser extension relay (required for `oe_ask` — invisible, no 403)
 
-A small companion **Brave/Chrome extension** removes the DataDome problem entirely: the MCP server submits the ask `POST` **inside your real logged-in tab** (genuine origin/cookies/TLS), with **no visible navigation**. It's a generic authenticated fetch proxy — all logic stays in Node; the extension just lends its browser session over a localhost relay.
+A small companion **Chromium extension** — works in Chrome, Edge, Brave, Arc, Vivaldi, Opera — removes the DataDome problem entirely: the MCP server submits the ask `POST` **inside your real logged-in tab** (genuine origin/cookies/TLS), with **no visible navigation**. It's a generic authenticated fetch proxy — all logic stays in Node; the extension just lends its browser session over a localhost relay. The call is handled by **whichever browser has the extension installed and is logged into OpenEvidence**, so install it in the browser you use for OpenEvidence (and run it in one browser at a time).
 
 Install (one time):
 
 1. Download from the [**extension release**](https://github.com/htlin222/openevidence-mcp/releases/tag/extension-v0.1.0) — grab the `…-relay-extension-*.zip` and unzip (or build from source: `cd extension && npm install && npm run build`).
-2. `brave://extensions` → **Developer mode** → **Load unpacked** → select the unzipped (or `extension/dist/`) folder.
+2. Open your browser's extensions page (`chrome://extensions`, `edge://extensions`, `brave://extensions`, …) → **Developer mode** → **Load unpacked** → select the unzipped (or `extension/dist/`) folder.
 3. Stay **logged in to openevidence.com** in that browser, then run the MCP server — it auto-connects.
 
-Then `oe_ask` routes through the extension automatically when the Node POST is DataDome-blocked. Set `OE_MCP_RELAY_TRANSPORT=all` to route **every** request through the extension's session — `cookies.json` becomes optional. Check the link: `curl http://127.0.0.1:8787/health`. Full docs: [`extension/`](extension/README.md).
+Then `oe_ask` submits through the extension (it is the only ask path). Set `OE_MCP_RELAY_TRANSPORT=all` to route **every** request through the extension's session — `cookies.json` becomes optional. Check the link: `curl http://127.0.0.1:8787/health`. Full docs: [`extension/`](extension/README.md).
 
-> The release also ships a signed `.crx`; note Chrome/Brave block `.crx` files loaded from outside the Web Store, so **Load unpacked from the zip** is the normal install. The `.crx` is for enterprise-policy / reference use.
+> The release also ships a signed `.crx`; note Chromium browsers block `.crx` files loaded from outside the Web Store, so **Load unpacked from the zip** is the normal install. The `.crx` is for enterprise-policy / reference use.
 
 ## How To Ask Questions
 

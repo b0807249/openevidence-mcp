@@ -193,7 +193,7 @@ server.registerTool(
 			);
 			if (resp.status < 200 || resp.status >= 300) {
 				return fail(
-					`relay POST /api/article -> ${resp.status} ${resp.body.slice(0, 200)}`,
+					`relay POST /api/article -> ${resp.status}${resp.status === 401 || resp.status === 403 ? " (the browser running the relay extension may not be logged in to OpenEvidence)" : ""} ${resp.body.slice(0, 160)}`,
 				);
 			}
 			const created = JSON.parse(resp.body) as { id?: string };
