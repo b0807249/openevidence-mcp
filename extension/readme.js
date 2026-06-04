@@ -23,7 +23,9 @@ async function check() {
     clearTimeout(t);
     const h = await res.json();
     if (h && h.connected) {
-      set("ok", "Connected", `relay v${h.version ?? "?"} · pid ${h.pid ?? "?"}`);
+      // version/pid only exist on the shared-daemon build; older relays omit them.
+      const meta = h.version != null ? `relay v${h.version} · pid ${h.pid}` : "";
+      set("ok", "Connected", meta);
     } else {
       set("bad", "Tab not logged in", "Relay is up, but no logged-in OpenEvidence tab is polling it.");
     }
