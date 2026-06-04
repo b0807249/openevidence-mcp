@@ -1,9 +1,14 @@
 {
+  "_comment": "Full reference of available env knobs. NONE are required: the browser-extension relay is the login. Default config (claude-desktop-config.json) needs no env at all. All values below are shown at their defaults; OE_MCP_COOKIES_PATH is only used for the legacy OE_MCP_RELAY_TRANSPORT=off cookie read path, the Python collections tooling, and npm run doctor/login/smoke.",
   "mcpServers": {
     "openevidence": {
       "command": "node",
       "args": ["/ABSOLUTE/PATH/openevidence-mcp/dist/server.js"],
       "env": {
+        "OE_MCP_RELAY_TRANSPORT": "all",
+        "OE_MCP_RELAY_PORT": "8787",
+        "OE_MCP_RELAY_PID_PATH": "/ABSOLUTE/PATH/.openevidence-mcp/relay.pid",
+        "OE_MCP_RELAY_LOG_PATH": "/ABSOLUTE/PATH/.openevidence-mcp/relay.log",
         "OE_MCP_COOKIES_PATH": "/ABSOLUTE/PATH/openevidence-mcp/cookies.json"
       }
     }

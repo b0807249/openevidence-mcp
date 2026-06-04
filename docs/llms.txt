@@ -16,7 +16,7 @@
 - Validate OpenEvidence auth (`oe_auth_status`)
 - List OpenEvidence history (`oe_history_list`)
 - Get full article payload (`oe_article_get`)
-- Ask and optionally wait (`oe_ask`)
+- Ask fire-and-forget by default (`oe_ask` returns {article_id, status:"pending"}); fetch later with `oe_article_get`, or pass wait_for_completion:true to block
 
 ## Canonical
 - Site: https://github.com/htlin222/openevidence-mcp

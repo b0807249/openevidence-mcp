@@ -21,7 +21,7 @@ OpenEvidence MCP is an open-source bridge that connects OpenEvidence to MCP clie
 - medical follow-up continuation via `original_article_id`
 - article payload extraction by `article_id`
 - medical conversation history browsing
-- auth validation and recovery for OpenEvidence browser sessions
+- auth validation via the browser-extension relay (staying logged into openevidence.com is the login)
 - multi-client MCP setup (Codex CLI, Claude Code, OpenClaw, Cursor, Cline, Continue)
 
 ## Core Entities
@@ -40,7 +40,7 @@ OpenEvidence MCP is an open-source bridge that connects OpenEvidence to MCP clie
 - `oe_auth_status` -> auth preflight for medical workflows
 - `oe_history_list` -> browse prior clinical questions
 - `oe_article_get` -> retrieve full answer payload for reuse/reporting
-- `oe_ask` -> ask a new medical question and optionally wait for completion
+- `oe_ask` -> fire-and-forget by default (returns pending article_id); fetch the answer later via `oe_article_get`, or pass wait_for_completion:true to block
 
 ## Search Intent Clusters (EN)
 
@@ -163,6 +163,6 @@ OpenEvidence MCP is an open-source bridge that connects OpenEvidence to MCP clie
 
 ## Canonical Flows
 
-1. preflight -> `oe_auth_status` -> ask -> poll -> fetch article
+1. preflight -> `oe_auth_status` -> `oe_ask` (returns pending article_id) -> `oe_article_get(article_id)` poll/wait -> read article
 2. preflight -> history list -> pick article -> follow-up ask
 3. auth failed -> login -> smoke -> retry tools

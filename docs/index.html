@@ -139,7 +139,7 @@
         <h2 id="overview-title">Overview</h2>
         <p>
           OpenEvidence MCP is an unofficial Model Context Protocol server that connects OpenEvidence via your own browser session.
-          It supports local auth status checks, history retrieval, article fetch by ID, and question execution with completion polling.
+          It supports local auth status checks, history retrieval, article fetch by ID, and asking questions (fire-and-forget by default — fetch the answer later by article ID, or pass wait_for_completion:true to block).
         </p>
       </section>
 
@@ -159,9 +159,9 @@
           <dt><code>oe_history_list</code></dt>
           <dd>Read previous conversations through <code>/api/article/list</code>.</dd>
           <dt><code>oe_article_get</code></dt>
-          <dd>Fetch full article payload by article ID.</dd>
+          <dd>Fetch full article payload by article ID. Also used to retrieve a pending oe_ask answer by its article_id.</dd>
           <dt><code>oe_ask</code></dt>
-          <dd>Create a new question and optionally wait for completion.</dd>
+          <dd>Create a new question. Returns {article_id, status:"pending"} immediately by default; retrieve the answer later with oe_article_get, or pass wait_for_completion:true for one-shot blocking.</dd>
         </dl>
       </section>
 
@@ -206,7 +206,7 @@
           <dt>Journal Club Prep</dt>
           <dd>Pull recent articles on a topic via oe_history_list and oe_article_get. Feed them into your AI workflow for summary and discussion points.</dd>
           <dt>Team Knowledge Base</dt>
-          <dd>Multiple clinicians can run their own sessions. Each authenticates with their own OpenEvidence account - no shared credentials needed.</dd>
+          <dd>Many Claude Code / Codex sessions run concurrently through one shared relay daemon and a single logged-in OpenEvidence browser tab — no per-session credentials or cookie files to manage.</dd>
         </dl>
       </section>
 

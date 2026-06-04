@@ -71,7 +71,7 @@
         <h2>概览</h2>
         <p>
           OpenEvidence MCP 是非官方 MCP 服务器，通过你的浏览器会话连接 OpenEvidence。
-          支持认证检查、历史列表、按 ID 获取文章，以及提问并轮询完成状态。
+          支持认证检查、历史列表、按 ID 获取文章，以及提问（默认 fire-and-forget：立即返回 article_id（status: pending），稍后用 oe_article_get 取回答案；传入 wait_for_completion:true 则阻塞等待结果）。
         </p>
       </section>
       <section class="panel">

@@ -2,10 +2,7 @@
   "mcpServers": {
     "openevidence": {
       "command": "node",
-      "args": ["/ABSOLUTE/PATH/openevidence-mcp/dist/server.js"],
-      "env": {
-        "OE_MCP_COOKIES_PATH": "/ABSOLUTE/PATH/openevidence-mcp/cookies.json"
-      }
+      "args": ["/ABSOLUTE/PATH/openevidence-mcp/dist/server.js"]
     }
   }
 }

@@ -71,7 +71,7 @@
         <h2>Overview</h2>
         <p>
           OpenEvidence MCP एक unofficial MCP server है जो browser session के ज़रिए OpenEvidence से जुड़ता है।
-          इसमें auth check, history, article-by-id और ask-with-polling सपोर्ट है।
+          इसमें auth check, history, article-by-id और ask सपोर्ट है (डिफ़ॉल्ट रूप से fire-and-forget: तुरंत pending article_id लौटाता है जिसे बाद में oe_article_get से लें; wait_for_completion:true देने पर जवाब आने तक रुकता है)।
         </p>
       </section>
       <section class="panel">

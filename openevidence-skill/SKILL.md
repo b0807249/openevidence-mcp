@@ -1,6 +1,6 @@
 ---
 name: openevidence
-description: Query OpenEvidence (clinical evidence assistant) without an MCP server. Mirrors the openevidence-mcp tool surface 1:1 - check auth, list question history, fetch an article, or ask a new question (with optional follow-up thread). Use when the user asks medical / evidence-based clinical questions, references OpenEvidence, asks for "OE answers", or wants citations + BibTeX from OpenEvidence. Portable to claude.ai's /mnt sandbox - just drop the folder and a fresh cookies.json next to scripts/oe.py.
+description: Query OpenEvidence (clinical evidence assistant) without an MCP server. Closely mirrors the openevidence-mcp tool surface - check auth, list question history, fetch an article, or ask a new question (with optional follow-up thread). Use when the user asks medical / evidence-based clinical questions, references OpenEvidence, asks for "OE answers", or wants citations + BibTeX from OpenEvidence. Portable to claude.ai's /mnt sandbox - just drop the folder and a fresh cookies.json next to scripts/oe.py.
 ---
 
 # OpenEvidence (portable)
@@ -30,6 +30,8 @@ Cookie lookup order: `$OE_COOKIES`, `./cookies.json`, the skill folder, `~/.open
 ```bash
 python3 scripts/oe.py ask "First-line therapy for adult community-acquired pneumonia in a hospitalized patient"
 ```
+
+> Note: behavior differs from the MCP tool. The MCP `oe_ask` is now fire-and-forget by default (returns a pending `article_id`; pass `wait_for_completion:true` to block, or fetch later via `oe_article_get`). THIS portable CLI waits by default — override with `--no-wait`.
 
 Returns `{ article_id, status, extracted_answer_raw, figures, artifacts }`. Artifacts land in `$OE_ARTIFACT_DIR` or `./oe-artifacts/<article_id>/` and include:
 

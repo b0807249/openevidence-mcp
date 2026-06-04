@@ -11,7 +11,8 @@ whatever `{method, path, body}` the server hands it and returns `{status, body}`
 All OpenEvidence logic stays in Node.
 
 It is **localhost-only**: the extension talks to `http://127.0.0.1:8787` (the
-relay the MCP server runs) and never to any third party.
+shared relay daemon the MCP server auto-spawns, which outlives every session) and
+never to any third party.
 
 ## How it works
 
@@ -25,8 +26,12 @@ oe_ask ──► MCP server ── relay.request(POST /api/article) ──► re
                                                                    │ pinned OpenEvidence tab
                                                                    ▼  (real origin/cookies/TLS)
                                                        reads {status, body} ─ POST /result ─► relay
-MCP server ◄── article id ── relay ;  then polls the answer (Node GET, or via the relay)
+MCP server ◄── article id ── relay ;  answer fetched later via oe_article_get
 ```
+
+`oe_ask` is **fire-and-forget by default**: it returns `{article_id,
+status:"pending"}` immediately (it does *not* block on the answer), and the answer
+is fetched later via `oe_article_get(article_id)`.
 
 The extension keeps **one pinned, background OpenEvidence tab** (tracked by tab
 id, so it never touches a tab you opened yourself) and runs the request there.
@@ -41,10 +46,11 @@ So you choose your browser simply by installing the extension there.
 - **Install it in the browser you're logged into OpenEvidence with.** The in-tab
   request uses *that* browser's session; if that browser isn't logged in, the call
   fails with a 401/403 (the server says so).
-- **Use one browser at a time.** If two browsers run the extension simultaneously,
-  a request goes to whichever polls first — which may not be the logged-in one.
-  To switch browsers, load the extension in the new one (and remove/disable it in
-  the old one).
+- **Keep one Chromium logged into openevidence.com with the extension loaded.**
+  That single tab serves *all* concurrent Claude/Codex sessions through the shared
+  relay daemon — you don't need a browser per session. Only if you literally load
+  the extension in *two* browsers do requests race (a request goes to whichever
+  polls first), so pick one.
 
 ## Build
 
@@ -76,7 +82,8 @@ openevidence.com — allow it.
 
 ## Use
 
-- Start (or restart) the MCP server so it runs the relay.
+- The MCP server auto-spawns the shared relay daemon on first use; it stays up
+  across sessions, so no manual restart is needed.
 - Ask as usual (`oe_ask`). The server submits the POST through this extension; if
   no extension is connected, `oe_ask` fails fast with this guidance.
 - The first ask creates the pinned OE tab; leave it open (it's reused).
@@ -87,8 +94,10 @@ openevidence.com — allow it.
   extension at build time — set it before `make extension` and rebuild + reload if
   you change it.
 - Disable the relay entirely: `OE_MCP_RELAY=0` on the server.
+- Daemon PID file: `OE_MCP_RELAY_PID_PATH` (default `~/.openevidence-mcp/relay.pid`).
+- Daemon log file: `OE_MCP_RELAY_LOG_PATH` (default `~/.openevidence-mcp/relay.log`).
 
 ## Checking it's connected
 
 With the server running: `curl http://127.0.0.1:8787/health` →
-`{"ok":true,"connected":true,...}` once the extension is polling.
+`{"ok":true,"connected":true,"version":1,"pid":12345}` once the extension is polling.
