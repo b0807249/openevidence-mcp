@@ -56,6 +56,8 @@ export interface RelayServer {
   readonly port: number;
   /** True while the extension is actively long-polling (recently seen). */
   isConnected(): boolean;
+  /** Number of requests currently awaiting an extension response. */
+  pending(): number;
   /** Run a request through the extension; resolves with its raw {status, body}. */
   request(req: RelayRequest, opts?: { timeoutMs?: number }): Promise<RelayResponse>;
   close(): void;
@@ -268,6 +270,7 @@ export function startRelayServer(options: RelayServerOptions): Promise<RelayServ
       resolve({
         port: boundPort,
         isConnected,
+        pending: () => pending.size,
         request,
         close: () => {
           for (const w of waiters) clearTimeout(w.timer);

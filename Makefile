@@ -20,7 +20,7 @@ SERVER := $(CURDIR)/dist/server.js
 VERSION := $(shell $(NODE) -p "require('$(CURDIR)/package.json').version")
 EXT_VERSION := $(shell $(NODE) -p "require('$(CURDIR)/extension/package.json').version")
 
-.PHONY: all help deps build extension rebuild reinstall check test smoke fingerprint import-cookies update-dotflows update-dotflows-from-har sync-mine sync-mine-from-har install-claude-global install-codex-global install-agy-global install-all remove-claude-global remove-codex-global remove-agy-global reinstall-claude-global reinstall-codex-global reinstall-agy-global release publish release-extension kill-all clean
+.PHONY: all help deps build extension rebuild reinstall check test smoke fingerprint import-cookies update-dotflows update-dotflows-from-har sync-mine sync-mine-from-har install-claude-global install-codex-global install-agy-global install-all remove-claude-global remove-codex-global remove-agy-global reinstall-claude-global reinstall-codex-global reinstall-agy-global release publish release-extension kill-all reap clean
 
 # One command does the whole setup: install deps, build the MCP server
 # (dist/server.js) + the relay extension (extension/dist), and register the
@@ -43,6 +43,7 @@ help:
 	@printf '  make all            one-shot: deps + build server + build extension + register into Claude & Codex,\n'
 	@printf '                      then load the extension (chrome://extensions -> Load unpacked -> extension/dist)\n'
 	@printf '  make kill-all       stop all MCP servers + the relay daemon (free port %s)\n' "$(RELAY_PORT)"
+	@printf '  make reap           garbage-collect orphaned relay daemons (keep the live one on :%s)\n' "$(RELAY_PORT)"
 	@printf '\n\033[1mBuild & verify:\033[0m\n'
 	@printf '  make build [HAR=…]  compile dist/server.js (wipes dist/ first; extracts fingerprint from HAR if given)\n'
 	@printf '  make extension      build the browser relay extension (wipes extension/dist/ first)\n'
@@ -185,6 +186,18 @@ kill-all:
 	@pid=$$(lsof -ti tcp:$(RELAY_PORT) 2>/dev/null); if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "  freed port $(RELAY_PORT) (pid $$pid)"; fi
 	@rm -f "$(RELAY_PID)" 2>/dev/null || true
 	@echo "  done. (reconnect /mcp in any open client session to respawn a fresh server)"
+
+reap:
+	@echo "==> reaping orphaned relay daemons (keeping the live one on :$(RELAY_PORT))"
+	@keep=$$(lsof -ti tcp:$(RELAY_PORT) 2>/dev/null | head -1); \
+	reaped=0; \
+	for pid in $$(pgrep -f "$(CURDIR)/dist/relay-daemon.js" 2>/dev/null); do \
+	  if [ "$$pid" != "$$keep" ]; then \
+	    if kill $$pid 2>/dev/null; then echo "  reaped orphan daemon pid $$pid"; reaped=$$((reaped+1)); fi; \
+	  fi; \
+	done; \
+	if [ "$$reaped" -eq 0 ]; then echo "  no orphan daemons found"; fi; \
+	if [ -n "$$keep" ]; then echo "  kept canonical daemon pid $$keep on :$(RELAY_PORT)"; else echo "  (no daemon currently on :$(RELAY_PORT))"; fi
 
 clean:
 	rm -rf "$(CURDIR)/dist" "$(CURDIR)/extension/dist"

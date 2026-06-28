@@ -45,6 +45,25 @@ function getRelay(): Promise<RelayClient | null> {
 // Connect eagerly so the daemon is up by the time the first tool call lands.
 void getRelay();
 
+// Exit cleanly when the host (Claude/Codex) goes away. The stdio transport ends
+// our stdin on disconnect; without this the process can linger as an orphan and
+// pile up across sessions. Closing the relay client stops its health-poll timer
+// (the shared daemon keeps running for other sessions — we never kill it here).
+let shuttingDown = false;
+function shutdownServer(signal: string): void {
+	if (shuttingDown) return;
+	shuttingDown = true;
+	if (relayClientPromise) {
+		void relayClientPromise.then((c) => c?.close()).catch(() => {});
+	}
+	process.stderr.write(`[openevidence-mcp] ${signal} — exiting\n`);
+	process.exit(0);
+}
+process.on("SIGTERM", () => shutdownServer("SIGTERM"));
+process.on("SIGINT", () => shutdownServer("SIGINT"));
+process.stdin.on("end", () => shutdownServer("stdin end"));
+process.stdin.on("close", () => shutdownServer("stdin close"));
+
 const server = new McpServer({
 	name: "openevidence-mcp",
 	version: "1.0.0",

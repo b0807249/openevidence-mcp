@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import "dotenv/config";
 
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { platform as osPlatform, arch as osArch } from "node:os";
 import { stdout, stderr } from "node:process";
@@ -371,6 +372,51 @@ async function runLiveProbe(config: AppConfig): Promise<DoctorCheck[]> {
   return checks;
 }
 
+/**
+ * Audit running relay daemons. Exactly one should exist; extras are orphans that
+ * accumulate without garbage collection (sleep/wake, port drift, respawns). The
+ * daemon now self-reaps, but this surfaces any survivors so `make reap` can clear
+ * them. Best-effort and POSIX-only (pgrep); silently skips where unavailable.
+ */
+function relayDaemonChecks(): DoctorCheck[] {
+  let pids: number[] = [];
+  try {
+    const out = execFileSync("pgrep", ["-f", "dist/relay-daemon.js"], {
+      encoding: "utf8",
+    });
+    pids = out
+      .split("\n")
+      .map((l) => parseInt(l.trim(), 10))
+      .filter((n) => Number.isInteger(n));
+  } catch {
+    // pgrep exits 1 when nothing matches (or is missing) — treat as zero daemons.
+    return [
+      {
+        level: "pass",
+        code: "relay-daemons",
+        message: "no relay daemon running (a session will spawn one on demand)",
+      },
+    ];
+  }
+  if (pids.length <= 1) {
+    return [
+      {
+        level: "pass",
+        code: "relay-daemons",
+        message: `${pids.length} relay daemon running${pids.length ? ` (pid ${pids[0]})` : ""}`,
+      },
+    ];
+  }
+  return [
+    {
+      level: "warn",
+      code: "relay-daemons",
+      message: `${pids.length} relay daemons running (pids ${pids.join(", ")}) — only one is needed`,
+      hint: "Orphaned daemons self-reap within the idle TTL; run `make reap` to clear them now.",
+    },
+  ];
+}
+
 async function main(): Promise<void> {
   const offline = process.argv.includes("--offline");
   const asJson = process.argv.includes("--json");
@@ -393,6 +439,8 @@ async function main(): Promise<void> {
     host,
     nowMs: Date.now(),
   });
+
+  checks.push(...relayDaemonChecks());
 
   if (!offline) {
     checks.push(...(await runLiveProbe(config)));
